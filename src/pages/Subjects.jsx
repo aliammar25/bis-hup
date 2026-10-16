@@ -19,10 +19,23 @@ console.log("Error:", error);
       <Status loading={loading} error={error}>
         <div className="grid">
           {list.map((s) => (
+          
             <Link key={s.id} to={`/subjects/${s.id}`} className="plain">
-              <div className="card"><b>{s.name}</b><div className="mut">{s.code} · {s.doctor_name}</div></div>
+              
+              <div className="card">
+                <b>{s.name}</b>
+          
+                <div className="mut">{s.code} · {s.doctor_name}</div>
+                <h3  className="clik">اضغط هنا</h3>
+               
+
+                </div>
             </Link>
-          ))}
+          
+          ))
+          
+          
+          }
         </div>
         {!list.length && <p className="mut">لا توجد نتائج.</p>}
       </Status>

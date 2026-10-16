@@ -48,3 +48,15 @@ a.lnk{color:var(--pr);font-weight:600;text-decoration:none}a.plain{text-decorati
 .whatsapp-btn:active {
   transform: translateY(0);
 }
+
+.clik{
+  background-color:#818cf8;
+  padding: 10px;
+  margin: 10px;
+  text-align: center;
+  border-radius: 10px;
+  font-size: 12px;
+}
+.clik:hover{
+  background-color: #4f46e5;
+}
