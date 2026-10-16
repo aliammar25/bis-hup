@@ -1,3 +1,4 @@
+ HEAD
 # BIS Hub
 
 ```bash
@@ -17,3 +18,6 @@ npm run dev
 
 ## Admin
 أنشئ مستخدم من Supabase > Authentication > Users > Add user (Auto Confirm)، ثم نفّذ سطر الـ promote، ثم ادخل من /#/admin.
+=======
+# bis-hup
+ a58d2bc6504834b4888f4ca20debb9a43b63f01e
