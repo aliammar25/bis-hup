@@ -10,7 +10,6 @@ const links = [
   ["/timetable", "الجدول"],
   ["/exams", "الامتحانات الإلكترونية"],
   ["/admin", "دخول الأدمن"],
-  ["/admin/exams", "إدارة الامتحانات"],
 ];
 
 export default function Sidebar() {
