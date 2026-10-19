@@ -226,3 +226,58 @@ export async function getPublishedExams() {
 
   return data ?? [];
 }
+
+
+
+
+
+/* ---------- Load one published exam and its questions ---------- */
+
+export async function getExamForAttempt(examId) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
+  const { data: exam, error: examError } = await supabase
+    .from("exams")
+    .select(`
+      id,
+      title,
+      description,
+      duration_minutes,
+      pass_mark,
+      subject_id,
+      audience,
+      section_id
+    `)
+    .eq("id", examId)
+    .eq("is_published", true)
+    .maybeSingle();
+
+  if (examError) throw examError;
+
+  if (!exam) {
+    throw new Error("الامتحان غير موجود أو لم يتم نشره.");
+  }
+
+  const { data: questions, error: questionsError } =
+    await supabase
+      .from("exam_questions")
+      .select(`
+        id,
+        prompt,
+        question_type,
+        options,
+        points,
+        sort_order
+      `)
+      .eq("exam_id", examId)
+      .order("sort_order", { ascending: true });
+
+  if (questionsError) throw questionsError;
+
+  return {
+    exam,
+    questions: questions ?? [],
+  };
+}
