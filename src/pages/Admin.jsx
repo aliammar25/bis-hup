@@ -122,8 +122,6 @@ export default function Admin() {
 
   const load = async () => {
     try {
-      setMsg("");
-
       const [currentRows, subjectRows] = await Promise.all([
         listAll(tab),
         listAll("subjects"),
@@ -148,6 +146,7 @@ export default function Admin() {
   useEffect(() => {
     if (isAdmin) {
       setForm({});
+      setMsg("");
       load();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -232,24 +231,33 @@ export default function Admin() {
     try {
       const row = { ...form };
 
+      // اقرأ الاختيار مباشرة من النموذج عند الحفظ.
       if (tab === "section_tasks") {
-        const rawSectionId = form.section_id;
+        const formData = new FormData(event.currentTarget);
+        const rawSectionId = formData.get("section_id");
+
+        console.log("Selected section from form:", rawSectionId);
+        console.log("Available sections:", sections);
 
         if (
-          rawSectionId === undefined ||
           rawSectionId === null ||
-          rawSectionId === ""
+          rawSectionId === undefined ||
+          String(rawSectionId).trim() === ""
         ) {
-          throw new Error("من فضلك اختار السكشن قبل حفظ التاسك.");
+          throw new Error(
+            "قيمة السكشن لم تصل من النموذج. اختر السكشن مرة أخرى."
+          );
         }
 
         const selectedSection = Number(rawSectionId);
 
         if (
-          !Number.isInteger(selectedSection) ||
+          !Number.isSafeInteger(selectedSection) ||
           selectedSection <= 0
         ) {
-          throw new Error("رقم السكشن غير صحيح. اختار السكشن مرة أخرى.");
+          throw new Error(
+            "معرّف السكشن ليس رقمًا صحيحًا موجبًا. راجع نوع id في جدول sections."
+          );
         }
 
         const exists = sections.some(
@@ -258,7 +266,7 @@ export default function Admin() {
 
         if (!exists) {
           throw new Error(
-            "السكشن غير موجود في القائمة المحملة. حدّث الصفحة وحاول مرة أخرى."
+            "السكشن المختار غير موجود في البيانات المحملة. حدّث الصفحة وحاول مرة أخرى."
           );
         }
 
@@ -272,7 +280,8 @@ export default function Admin() {
           )
         ) {
           if (key === "section_id" && tab === "section_tasks") {
-            row[key] = Number(row[key]);
+            // تم التحقق من القيمة بالأعلى.
+            row[key] = Number(row[key] ?? row.section_id);
           } else {
             row[key] =
               row[key] === "" || row[key] == null
@@ -290,12 +299,12 @@ export default function Admin() {
 
       if (
         tab === "section_tasks" &&
-        (!Number.isInteger(row.section_id) || row.section_id <= 0)
+        (!Number.isSafeInteger(row.section_id) || row.section_id <= 0)
       ) {
-        throw new Error("رقم السكشن غير صحيح. اختار السكشن مرة أخرى.");
+        throw new Error("معرّف السكشن غير صالح.");
       }
 
-      console.log("Admin form data:", row);
+      console.log("Final row sent to saveRow:", row);
 
       await saveRow(tab, row);
 
@@ -372,6 +381,7 @@ export default function Admin() {
 
               {type === "subject" ? (
                 <select
+                  name={key}
                   required
                   value={form[key] ?? ""}
                   onChange={(event) => set(key, event.target.value)}
@@ -385,6 +395,7 @@ export default function Admin() {
                 </select>
               ) : type === "section" ? (
                 <select
+                  name="section_id"
                   required
                   value={form.section_id ?? ""}
                   disabled={sections.length === 0}
@@ -409,6 +420,7 @@ export default function Admin() {
                 </select>
               ) : type === "day" ? (
                 <select
+                  name={key}
                   required
                   value={form[key] ?? ""}
                   onChange={(event) => set(key, event.target.value)}
@@ -422,6 +434,7 @@ export default function Admin() {
                 </select>
               ) : type === "sectionDay" ? (
                 <select
+                  name={key}
                   required
                   value={form[key] ?? ""}
                   onChange={(event) => set(key, event.target.value)}
@@ -442,6 +455,7 @@ export default function Admin() {
                     }
                   />
                   <input
+                    name={key}
                     type="url"
                     placeholder="أو الصق رابط الملف"
                     value={form[key] ?? ""}
@@ -450,6 +464,7 @@ export default function Admin() {
                 </>
               ) : (
                 <input
+                  name={key}
                   required={
                     ["name", "title"].includes(key) ||
                     ["datetime", "time"].includes(type)
@@ -463,7 +478,7 @@ export default function Admin() {
           ))}
         </div>
 
-        <button className="btn" disabled={busy}>
+        <button className="btn" type="submit" disabled={busy}>
           {busy ? "جاري التنفيذ..." : "حفظ"}
         </button>{" "}
 
@@ -522,4 +537,3 @@ export default function Admin() {
     </>
   );
 }
-
