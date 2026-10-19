@@ -1,60 +1,114 @@
-// Service layer: pages only call these functions.
+
+ // Service layer: pages only call these functions.
 // With VITE_SUPABASE_* set it reads from Supabase; otherwise it uses mock data.
+
 import * as mock from "../data/mock.js";
 import { supabase } from "../lib/supabase.js";
 
-const delay = (v) => new Promise((r) => setTimeout(() => r(structuredClone(v)), 200));
+const delay = (value) =>
+  new Promise((resolve) =>
+    setTimeout(() => resolve(structuredClone(value)), 200)
+  );
 
 async function q(table, build) {
-  const { data, error } = await build(supabase.from(table).select("*"));
+  const { data, error } = await build(
+    supabase.from(table).select("*")
+  );
+
   if (error) throw error;
   return data;
 }
-const bySubject = (sid) => (query) => (sid ? query.eq("subject_id", Number(sid)) : query);
+
+const bySubject = (subjectId) => (query) =>
+  subjectId
+    ? query.eq("subject_id", Number(subjectId))
+    : query;
+
+// ---------- Subjects ----------
 
 export const getSubjects = () =>
-  supabase ? q("subjects", (x) => x.order("id")) : delay(mock.subjects);
+  supabase
+    ? q("subjects", (query) => query.order("id"))
+    : delay(mock.subjects);
 
 export const getSubject = async (id) =>
   supabase
-    ? (await q("subjects", (x) => x.eq("id", Number(id)).limit(1)))[0] ?? null
-    : delay(mock.subjects.find((s) => s.id === Number(id)) ?? null);
+    ? (await q("subjects", (query) =>
+        query.eq("id", Number(id)).limit(1)
+      ))[0] ?? null
+    : delay(
+        mock.subjects.find((subject) => subject.id === Number(id)) ??
+          null
+      );
 
-export const getLectures = (sid) =>
-  supabase
-    ? q("lectures", (x) => bySubject(sid)(x).order("week_number"))
-    : delay(mock.lectures.filter((l) => !sid || l.subject_id === Number(sid)));
+// ---------- Lectures ----------
 
-export const getTasks = (sid) =>
+export const getLectures = (subjectId) =>
   supabase
-    ? q("tasks", (x) => bySubject(sid)(x).order("due_date"))
-    : delay(mock.tasks.filter((t) => !sid || t.subject_id === Number(sid)));
+    ? q("lectures", (query) =>
+        bySubject(subjectId)(query).order("week_number")
+      )
+    : delay(
+        mock.lectures.filter(
+          (lecture) =>
+            !subjectId ||
+            lecture.subject_id === Number(subjectId)
+        )
+      );
+
+// ---------- Tasks ----------
+
+export const getTasks = (subjectId) =>
+  supabase
+    ? q("tasks", (query) =>
+        bySubject(subjectId)(query).order("due_date")
+      )
+    : delay(
+        mock.tasks.filter(
+          (task) =>
+            !subjectId ||
+            task.subject_id === Number(subjectId)
+        )
+      );
+
+// ---------- Timetable ----------
 
 export const getTimetable = () =>
-  supabase ? q("timetable", (x) => x.order("id")) : delay(mock.timetable);
+  supabase
+    ? q("timetable", (query) => query.order("id"))
+    : delay(mock.timetable);
 
-// ---------- Admin writes (RLS enforces admin-only in the database) ----------
-export const listAll = (table) => q(table, (x) => x.order("id"));
+// ---------- Admin writes ----------
+// Supabase RLS policies must enforce admin-only writes.
+
+export const listAll = (table) =>
+  q(table, (query) => query.order("id"));
 
 export async function saveRow(table, row) {
   const { id, created_at, ...rest } = row;
+
   const { error } = id
-    ? await supabase.from(table).update(rest).eq("id", id)
-    : await supabase.from(table).insert(rest);
+    ? await supabase
+        .from(table)
+        .update(rest)
+        .eq("id", id)
+    : await supabase
+        .from(table)
+        .insert(rest);
+
   if (error) throw error;
 }
 
 export async function deleteRow(table, id) {
-  const { error } = await supabase.from(table).delete().eq("id", id);
+  const { error } = await supabase
+    .from(table)
+    .delete()
+    .eq("id", id);
+
   if (error) throw error;
 }
 
-// export async function uploadFile(file) {
-//   const path = `${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
-//   const { error } = await supabase.storage.from("files").upload(path, file);
-//   if (error) throw error;
-//   return supabase.storage.from("files").getPublicUrl(path).data.publicUrl;
-// }
+// ---------- File upload ----------
 
 export async function uploadFile(file) {
   if (!supabase) {
@@ -77,7 +131,7 @@ export async function uploadFile(file) {
   if (error) {
     console.error("Supabase upload error:", error);
     throw new Error(
-      error.message || error.error || JSON.stringify(error) || "خطأ غير معروف أثناء رفع الملف"
+      error.message || "خطأ أثناء رفع الملف"
     );
   }
 
@@ -86,8 +140,31 @@ export async function uploadFile(file) {
     .getPublicUrl(data.path);
 
   if (!publicData?.publicUrl) {
-    throw new Error("تم رفع الملف لكن تعذّر إنشاء رابط له.");
+    throw new Error(
+      "تم رفع الملف لكن تعذّر إنشاء رابط له."
+    );
   }
 
   return publicData.publicUrl;
+}
+
+// ---------- Subjects with sections ----------
+
+export async function getSubjectsWithSections() {
+  if (!supabase) {
+    return [];
+  }
+
+  const [subjects, sections] = await Promise.all([
+    q("subjects", (query) => query.order("id")),
+    q("sections", (query) => query.order("id")),
+  ]);
+
+  const subjectIds = new Set(
+    sections.map((section) => Number(section.subject_id))
+  );
+
+  return subjects.filter((subject) =>
+    subjectIds.has(Number(subject.id))
+  );
 }

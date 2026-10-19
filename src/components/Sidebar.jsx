@@ -1,7 +1,15 @@
 import { NavLink } from "react-router-dom";
 import { useState } from "react";
 
-const links = [["/", "الرئيسية"], ["/subjects", "المواد"], ["/tasks", "التاسكات"], ["/timetable", "الجدول"], ["/admin", "دخول الأدمن"]];
+
+const links = [
+  ["/", "الرئيسية"],
+  ["/subjects", "المواد"],
+  ["/sections", "السكاشن "],
+  ["/tasks", "التاسكات"],
+  ["/timetable", "الجدول"],
+  ["/admin", "دخول الأدمن"],
+];
 
 export default function Sidebar() {
   const [dark, setDark] = useState(matchMedia("(prefers-color-scheme: dark)").matches);
