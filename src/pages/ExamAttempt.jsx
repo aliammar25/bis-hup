@@ -59,18 +59,46 @@ export default function ExamAttempt() {
     );
   }
 
-  const getOptions = (options) => {
-    if (Array.isArray(options)) return options;
+  
+const getOptions = (options) => {
+  if (Array.isArray(options)) {
+    return options.map((option, index) => {
+      if (typeof option === "string") {
+        return {
+          label: option,
+          value: String.fromCharCode(65 + index),
+        };
+      }
 
-    if (options && typeof options === "object") {
-      return Object.entries(options).map(([key, value]) => ({
-        label: key,
-        value,
-      }));
-    }
+      return {
+        label:
+          option.text ??
+          option.label ??
+          option.value ??
+          option.option ??
+          `اختيار ${index + 1}`,
+        value:
+          option.key ??
+          option.id ??
+          option.value ??
+          String.fromCharCode(65 + index),
+      };
+    });
+  }
 
-    return [];
-  };
+  if (options && typeof options === "object") {
+    return Object.entries(options).map(([key, value]) => ({
+      label:
+        typeof value === "object"
+          ? value.text ?? value.label ?? value.value ?? key
+          : value,
+      value: key,
+    }));
+  }
+
+  return [];
+};
+
 
   return (
     <main dir="rtl" className="exam-attempt-page">
