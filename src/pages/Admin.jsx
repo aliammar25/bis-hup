@@ -122,6 +122,8 @@ export default function Admin() {
 
   const load = async () => {
     try {
+      setMsg("");
+
       const [currentRows, subjectRows] = await Promise.all([
         listAll(tab),
         listAll("subjects"),
@@ -146,7 +148,6 @@ export default function Admin() {
   useEffect(() => {
     if (isAdmin) {
       setForm({});
-      setMsg("");
       load();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -231,42 +232,27 @@ export default function Admin() {
     try {
       const row = { ...form };
 
-      // اقرأ الاختيار مباشرة من النموذج عند الحفظ.
       if (tab === "section_tasks") {
         const formData = new FormData(event.currentTarget);
         const rawSectionId = formData.get("section_id");
 
-        console.log("Selected section from form:", rawSectionId);
-        console.log("Available sections:", sections);
-
         if (
-          rawSectionId === null ||
-          rawSectionId === undefined ||
+          rawSectionId == null ||
           String(rawSectionId).trim() === ""
         ) {
-          throw new Error(
-            "قيمة السكشن لم تصل من النموذج. اختر السكشن مرة أخرى."
-          );
+          throw new Error("من فضلك اختار السكشن قبل حفظ التاسك.");
         }
 
-        const selectedSection = Number(rawSectionId);
-
-        if (
-          !Number.isSafeInteger(selectedSection) ||
-          selectedSection <= 0
-        ) {
-          throw new Error(
-            "معرّف السكشن ليس رقمًا صحيحًا موجبًا. راجع نوع id في جدول sections."
-          );
-        }
+        // section_id من نوع UUID؛ احتفظ به كنص.
+        const selectedSection = String(rawSectionId).trim();
 
         const exists = sections.some(
-          (section) => Number(section.id) === selectedSection
+          (section) => String(section.id) === selectedSection
         );
 
         if (!exists) {
           throw new Error(
-            "السكشن المختار غير موجود في البيانات المحملة. حدّث الصفحة وحاول مرة أخرى."
+            "السكشن المختار غير موجود. حدّث الصفحة وحاول مرة أخرى."
           );
         }
 
@@ -280,8 +266,8 @@ export default function Admin() {
           )
         ) {
           if (key === "section_id" && tab === "section_tasks") {
-            // تم التحقق من القيمة بالأعلى.
-            row[key] = Number(row[key] ?? row.section_id);
+            // لا تحوّل UUID إلى رقم.
+            row[key] = String(row.section_id);
           } else {
             row[key] =
               row[key] === "" || row[key] == null
@@ -299,7 +285,8 @@ export default function Admin() {
 
       if (
         tab === "section_tasks" &&
-        (!Number.isSafeInteger(row.section_id) || row.section_id <= 0)
+        (typeof row.section_id !== "string" ||
+          !row.section_id.trim())
       ) {
         throw new Error("معرّف السكشن غير صالح.");
       }
@@ -400,9 +387,7 @@ export default function Admin() {
                   value={form.section_id ?? ""}
                   disabled={sections.length === 0}
                   onChange={(event) => {
-                    const value = event.target.value;
-
-                    set("section_id", value);
+                    set("section_id", event.target.value);
                     setMsg("");
                   }}
                 >

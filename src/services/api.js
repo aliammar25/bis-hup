@@ -82,24 +82,21 @@ export const listAll = (table) =>
 export async function saveRow(table, row) {
   const { id, created_at, ...rest } = row;
 
-  // تشخيص البيانات قبل إرسالها إلى Supabase
   console.log("Saving table:", table);
   console.log("Payload:", JSON.stringify(rest, null, 2));
 
-  // التحقق من رقم السكشن في تاسكات السكاشن
+  // section_id من نوع UUID، لذلك يجب إرساله كنص.
   if (table === "section_tasks") {
     if (
       rest.section_id == null ||
-      rest.section_id === "" ||
-      !Number.isFinite(Number(rest.section_id)) ||
-      Number(rest.section_id) <= 0
+      String(rest.section_id).trim() === ""
     ) {
       throw new Error(
-        "رقم السكشن غير موجود. اختار السكشن مرة أخرى."
+        "اختار السكشن قبل حفظ التاسك."
       );
     }
 
-    rest.section_id = Number(rest.section_id);
+    rest.section_id = String(rest.section_id).trim();
   }
 
   const result = id
