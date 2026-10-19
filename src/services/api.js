@@ -8,6 +8,10 @@ const delay = (value) =>
   );
 
 async function q(table, build) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
   const { data, error } = await build(
     supabase.from(table).select("*")
   );
@@ -80,23 +84,24 @@ export const listAll = (table) =>
   q(table, (query) => query.order("id"));
 
 export async function saveRow(table, row) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
   const { id, created_at, ...rest } = row;
 
   console.log("Saving table:", table);
   console.log("Payload:", JSON.stringify(rest, null, 2));
 
-  // section_id من نوع UUID، لذلك يجب إرساله كنص.
+  // section_id عبارة عن UUID، فلا تحوّله إلى Number.
   if (table === "section_tasks") {
-    if (
-      rest.section_id == null ||
-      String(rest.section_id).trim() === ""
-    ) {
-      throw new Error(
-        "اختار السكشن قبل حفظ التاسك."
-      );
+    const sectionId = String(rest.section_id ?? "").trim();
+
+    if (!sectionId) {
+      throw new Error("اختار السكشن قبل حفظ التاسك.");
     }
 
-    rest.section_id = String(rest.section_id).trim();
+    rest.section_id = sectionId;
   }
 
   const result = id
@@ -120,6 +125,10 @@ export async function saveRow(table, row) {
 }
 
 export async function deleteRow(table, id) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
   const { error } = await supabase
     .from(table)
     .delete()

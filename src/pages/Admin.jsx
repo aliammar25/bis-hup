@@ -139,6 +139,8 @@ export default function Admin() {
             : await listAll("sections");
 
         setSections(sectionRows ?? []);
+      } else {
+        setSections([]);
       }
     } catch (error) {
       setMsg("تعذّر تحميل البيانات: " + error.message);
@@ -197,6 +199,10 @@ export default function Admin() {
 
     if (next.section_id != null) {
       next.section_id = String(next.section_id);
+    }
+
+    if (next.subject_id != null) {
+      next.subject_id = String(next.subject_id);
     }
 
     setForm(next);
@@ -266,8 +272,7 @@ export default function Admin() {
           )
         ) {
           if (key === "section_id" && tab === "section_tasks") {
-            // لا تحوّل UUID إلى رقم.
-            row[key] = String(row.section_id);
+            row[key] = String(row.section_id ?? "");
           } else {
             row[key] =
               row[key] === "" || row[key] == null
