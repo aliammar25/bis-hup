@@ -6,16 +6,15 @@ export default function ExamAttempt() {
   const navigate = useNavigate();
 
   return (
-    <main dir="rtl" className="exam-attempt-page">
+    <main dir="rtl">
       <h1>حل الامتحان الإلكتروني</h1>
-
       <p>رقم الامتحان: {id}</p>
+      <p>تم فتح الصفحة بنجاح.</p>
 
-      <p>تم فتح صفحة الامتحان بنجاح.</p>
-
-      <button type="button" onClick={() => navigate("/exams")}>
+      <button onClick={() => navigate("/exams")}>
         العودة إلى الامتحانات
       </button>
     </main>
   );
 }
+

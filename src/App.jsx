@@ -2,9 +2,8 @@
 import { Routes, Route } from "react-router-dom";
 
 import Sidebar from "./components/Sidebar.jsx";
-
-import AdminExams from "./pages/AdminExams.jsx";
 import ExamAttempt from "./pages/ExamAttempt.jsx";
+import AdminExams from "./pages/AdminExams.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Subjects from "./pages/Subjects.jsx";
 import SubjectDetails from "./pages/SubjectDetails.jsx";
