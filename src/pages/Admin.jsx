@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../context/Auth.jsx";
 import {
   listAll,
@@ -24,7 +24,6 @@ const SECTION_DAYS = [
   "الثلاثاء",
   "الأربعاء",
   "الخميس",
-  "الجمعة",
   "السبت",
 ];
 
@@ -38,6 +37,7 @@ const RES = {
       ["doctor_name", "الدكتور", "text"],
     ],
   },
+
   lectures: {
     label: "المحاضرات",
     title: (r) => r.title,
@@ -48,6 +48,7 @@ const RES = {
       ["file_url", "الملف", "file"],
     ],
   },
+
   tasks: {
     label: "التاسكات",
     title: (r) => r.title,
@@ -59,10 +60,13 @@ const RES = {
       ["file_url", "ملف التكليف", "file"],
     ],
   },
+
   timetable: {
     label: "الجدول",
     title: (r) =>
-      `${r.day_of_week} ${String(r.start_time ?? "").slice(0, 5)}`,
+      `${DAYS[Number(r.day_of_week)] ?? r.day_of_week} ${String(
+        r.start_time ?? ""
+      ).slice(0, 5)}`,
     fields: [
       ["subject_id", "المادة", "subject"],
       ["day_of_week", "اليوم", "day"],
@@ -71,6 +75,7 @@ const RES = {
       ["location", "المكان", "text"],
     ],
   },
+
   sections: {
     label: "السكاشن",
     title: (r) => r.name,
@@ -84,6 +89,7 @@ const RES = {
       ["place", "المكان", "text"],
     ],
   },
+
   section_tasks: {
     label: "تاسكات السكاشن",
     title: (r) => r.title,
@@ -98,9 +104,50 @@ const RES = {
 };
 
 const toLocal = (value) => {
+  if (!value) return "";
+
   const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+
   return date.toISOString().slice(0, 16);
+};
+
+const toIso = (value, label) => {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`قيمة ${label} غير صحيحة.`);
+  }
+
+  return date.toISOString();
+};
+
+const normalizeTime = (value) => {
+  if (!value) return null;
+
+  const time = String(value).trim();
+
+  // يقبل HH:mm أو HH:mm:ss
+  if (!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time)) {
+    throw new Error("صيغة الوقت غير صحيحة.");
+  }
+
+  return time.length === 5 ? `${time}:00` : time;
+};
+
+const timeToSeconds = (value) => {
+  const [hours, minutes, seconds = "0"] = value.split(":");
+
+  return (
+    Number(hours) * 3600 +
+    Number(minutes) * 60 +
+    Number(seconds)
+  );
 };
 
 export default function Admin() {
@@ -117,10 +164,13 @@ export default function Admin() {
   const res = RES[tab];
 
   const set = (key, value) => {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
   };
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       setMsg("");
 
@@ -132,28 +182,28 @@ export default function Admin() {
       setRows(currentRows ?? []);
       setSubjects(subjectRows ?? []);
 
-      if (tab === "section_tasks" || tab === "sections") {
-        const sectionRows =
-          tab === "sections"
-            ? currentRows
-            : await listAll("sections");
-
+      if (tab === "sections") {
+        setSections(currentRows ?? []);
+      } else if (tab === "section_tasks") {
+        const sectionRows = await listAll("sections");
         setSections(sectionRows ?? []);
       } else {
         setSections([]);
       }
     } catch (error) {
-      setMsg("تعذّر تحميل البيانات: " + error.message);
+      setMsg(
+        "تعذّر تحميل البيانات: " +
+          (error?.message ?? "خطأ غير معروف")
+      );
     }
-  };
+  }, [tab]);
 
   useEffect(() => {
     if (isAdmin) {
       setForm({});
       load();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, isAdmin]);
+  }, [tab, isAdmin, load]);
 
   if (!enabled) {
     return (
@@ -194,20 +244,31 @@ export default function Admin() {
     }
 
     for (const key of ["start_time", "end_time"]) {
-      if (next[key]) next[key] = String(next[key]).slice(0, 5);
+      if (next[key]) {
+        next[key] = String(next[key]).slice(0, 5);
+      }
     }
 
-    if (next.section_id != null) {
-      next.section_id = String(next.section_id);
+    // المعرفات تظل نصوصًا، خصوصًا UUID.
+    for (const key of ["subject_id", "section_id"]) {
+      if (next[key] != null) {
+        next[key] = String(next[key]);
+      }
     }
 
-    if (next.subject_id != null) {
-      next.subject_id = String(next.subject_id);
+    for (const key of ["week_number", "day_of_week"]) {
+      if (next[key] != null) {
+        next[key] = String(next[key]);
+      }
     }
 
     setForm(next);
     setMsg("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
   const onFile = async (key, file) => {
@@ -218,10 +279,14 @@ export default function Admin() {
 
     try {
       const url = await uploadFile(file);
+
       set(key, url);
       setMsg("تم رفع الملف.");
     } catch (error) {
-      setMsg("فشل رفع الملف: " + error.message);
+      setMsg(
+        "فشل رفع الملف: " +
+          (error?.message ?? "خطأ غير معروف")
+      );
     } finally {
       setBusy(false);
     }
@@ -238,9 +303,9 @@ export default function Admin() {
     try {
       const row = { ...form };
 
+      // التحقق من السكشن قبل حفظ تاسكه.
       if (tab === "section_tasks") {
-        const formData = new FormData(event.currentTarget);
-        const rawSectionId = formData.get("section_id");
+        const rawSectionId = row.section_id;
 
         if (
           rawSectionId == null ||
@@ -249,7 +314,6 @@ export default function Admin() {
           throw new Error("من فضلك اختار السكشن قبل حفظ التاسك.");
         }
 
-        // section_id من نوع UUID؛ احتفظ به كنص.
         const selectedSection = String(rawSectionId).trim();
 
         const exists = sections.some(
@@ -262,29 +326,71 @@ export default function Admin() {
           );
         }
 
+        // لا تحوّل UUID إلى رقم.
         row.section_id = selectedSection;
       }
 
-      for (const [key, , type] of res.fields) {
-        if (
-          ["number", "subject", "section", "day", "sectionDay"].includes(
-            type
-          )
-        ) {
-          if (key === "section_id" && tab === "section_tasks") {
-            row[key] = String(row.section_id ?? "");
+      // معالجة كل حقل حسب نوعه.
+      for (const [key, label, type] of res.fields) {
+        const value = row[key];
+
+        if (type === "subject" || type === "section") {
+          // subject_id و section_id غالبًا UUID.
+          row[key] =
+            value == null || String(value).trim() === ""
+              ? null
+              : String(value).trim();
+        } else if (type === "number") {
+          if (value == null || value === "") {
+            row[key] = null;
           } else {
-            row[key] =
-              row[key] === "" || row[key] == null
-                ? null
-                : Number(row[key]);
+            const number = Number(value);
+
+            if (!Number.isFinite(number)) {
+              throw new Error(`${label} يجب أن يكون رقمًا صحيحًا.`);
+            }
+
+            row[key] = number;
+          }
+        } else if (type === "day" || type === "sectionDay") {
+          if (value == null || value === "") {
+            row[key] = null;
+          } else {
+            const day = Number(value);
+            const maxDay = type === "day" ? 5 : 6;
+
+            if (
+              !Number.isInteger(day) ||
+              day < 0 ||
+              day > maxDay
+            ) {
+              throw new Error(`اختيار ${label} غير صحيح.`);
+            }
+
+            row[key] = day;
           }
         } else if (type === "datetime") {
-          row[key] = row[key]
-            ? new Date(row[key]).toISOString()
-            : null;
-        } else if (row[key] === "") {
+          row[key] = toIso(value, label);
+        } else if (type === "time") {
+          row[key] = normalizeTime(value);
+        } else if (typeof value === "string" && value.trim() === "") {
           row[key] = null;
+        }
+      }
+
+      // التحقق من أوقات السكشن والجدول قبل إرسال البيانات.
+      if (tab === "sections" || tab === "timetable") {
+        const start = row.start_time;
+        const end = row.end_time;
+
+        if (!start || !end) {
+          throw new Error("من فضلك أدخل وقت البداية ووقت النهاية.");
+        }
+
+        if (timeToSeconds(end) <= timeToSeconds(start)) {
+          throw new Error(
+            "وقت النهاية يجب أن يكون بعد وقت البداية."
+          );
         }
       }
 
@@ -302,9 +408,14 @@ export default function Admin() {
 
       setForm({});
       setMsg("تم الحفظ بنجاح ✅");
+
       await load();
     } catch (error) {
-      setMsg("فشل الحفظ: " + error.message);
+      setMsg(
+        "فشل الحفظ: " +
+          (error?.message ?? "حدث خطأ غير معروف")
+      );
+
       console.error("Admin save error:", error);
     } finally {
       setBusy(false);
@@ -312,17 +423,23 @@ export default function Admin() {
   };
 
   const del = async (id) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذا العنصر؟")) return;
+    if (!window.confirm("هل أنت متأكد من حذف هذا العنصر؟")) {
+      return;
+    }
 
     setBusy(true);
     setMsg("");
 
     try {
       await deleteRow(tab, id);
+
       setMsg("تم الحذف بنجاح.");
       await load();
     } catch (error) {
-      setMsg("فشل الحذف: " + error.message);
+      setMsg(
+        "فشل الحذف: " +
+          (error?.message ?? "خطأ غير معروف")
+      );
     } finally {
       setBusy(false);
     }
@@ -348,7 +465,11 @@ export default function Admin() {
           </button>
         ))}
 
-        <button type="button" className="btn g" onClick={logout}>
+        <button
+          type="button"
+          className="btn g"
+          onClick={logout}
+        >
           خروج
         </button>
       </div>
@@ -379,15 +500,19 @@ export default function Admin() {
                   onChange={(event) => set(key, event.target.value)}
                 >
                   <option value="">اختر المادة</option>
+
                   {subjects.map((subject) => (
-                    <option key={subject.id} value={subject.id}>
+                    <option
+                      key={subject.id}
+                      value={String(subject.id)}
+                    >
                       {subject.name}
                     </option>
                   ))}
                 </select>
               ) : type === "section" ? (
                 <select
-                  name="section_id"
+                  name={key}
                   required
                   value={form.section_id ?? ""}
                   disabled={sections.length === 0}
@@ -403,7 +528,10 @@ export default function Admin() {
                   </option>
 
                   {sections.map((section) => (
-                    <option key={section.id} value={String(section.id)}>
+                    <option
+                      key={section.id}
+                      value={String(section.id)}
+                    >
                       {section.name}
                     </option>
                   ))}
@@ -416,6 +544,7 @@ export default function Admin() {
                   onChange={(event) => set(key, event.target.value)}
                 >
                   <option value="">اختر اليوم</option>
+
                   {DAYS.map((day, index) => (
                     <option key={day} value={index}>
                       {day}
@@ -430,6 +559,7 @@ export default function Admin() {
                   onChange={(event) => set(key, event.target.value)}
                 >
                   <option value="">اختر اليوم</option>
+
                   {SECTION_DAYS.map((day, index) => (
                     <option key={day} value={index}>
                       {day}
@@ -440,10 +570,12 @@ export default function Admin() {
                 <>
                   <input
                     type="file"
+                    disabled={busy}
                     onChange={(event) =>
                       onFile(key, event.target.files?.[0])
                     }
                   />
+
                   <input
                     name={key}
                     type="url"
@@ -459,7 +591,12 @@ export default function Admin() {
                     ["name", "title"].includes(key) ||
                     ["datetime", "time"].includes(type)
                   }
-                  type={type === "datetime" ? "datetime-local" : type}
+                  type={
+                    type === "datetime"
+                      ? "datetime-local"
+                      : type
+                  }
+                  min={type === "number" ? 1 : undefined}
                   value={form[key] ?? ""}
                   onChange={(event) => set(key, event.target.value)}
                 />
@@ -476,6 +613,7 @@ export default function Admin() {
           <button
             type="button"
             className="btn g"
+            disabled={busy}
             onClick={() => {
               setForm({});
               setMsg("");
