@@ -116,6 +116,10 @@ export default function Admin() {
 
   const res = RES[tab];
 
+  const set = (key, value) => {
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+
   const load = async () => {
     try {
       setMsg("");
@@ -128,11 +132,13 @@ export default function Admin() {
       setRows(currentRows ?? []);
       setSubjects(subjectRows ?? []);
 
-      if (tab === "section_tasks") {
-        const sectionRows = await listAll("sections");
+      if (tab === "section_tasks" || tab === "sections") {
+        const sectionRows =
+          tab === "sections"
+            ? currentRows
+            : await listAll("sections");
+
         setSections(sectionRows ?? []);
-      } else if (tab === "sections") {
-        setSections(currentRows ?? []);
       }
     } catch (error) {
       setMsg("تعذّر تحميل البيانات: " + error.message);
@@ -158,9 +164,13 @@ export default function Admin() {
     );
   }
 
-  if (!ready) return <p className="mut">جاري التحميل...</p>;
+  if (!ready) {
+    return <p className="mut">جاري التحميل...</p>;
+  }
 
-  if (!session) return <Login />;
+  if (!session) {
+    return <Login />;
+  }
 
   if (!isAdmin) {
     return (
@@ -174,9 +184,6 @@ export default function Admin() {
     );
   }
 
-  const set = (key, value) =>
-    setForm((current) => ({ ...current, [key]: value }));
-
   const edit = (row) => {
     const next = { ...row };
 
@@ -186,6 +193,10 @@ export default function Admin() {
 
     for (const key of ["start_time", "end_time"]) {
       if (next[key]) next[key] = String(next[key]).slice(0, 5);
+    }
+
+    if (next.section_id != null) {
+      next.section_id = String(next.section_id);
     }
 
     setForm(next);
@@ -221,18 +232,24 @@ export default function Admin() {
     try {
       const row = { ...form };
 
-      // تحقق خاص بتاسكات السكاشن
       if (tab === "section_tasks") {
-        const selectedSection = Number(row.section_id);
+        const rawSectionId = form.section_id;
 
         if (
-          row.section_id == null ||
-          row.section_id === "" ||
-          !Number.isFinite(selectedSection) ||
+          rawSectionId === undefined ||
+          rawSectionId === null ||
+          rawSectionId === ""
+        ) {
+          throw new Error("من فضلك اختار السكشن قبل حفظ التاسك.");
+        }
+
+        const selectedSection = Number(rawSectionId);
+
+        if (
+          !Number.isInteger(selectedSection) ||
           selectedSection <= 0
         ) {
-          setMsg("من فضلك اختار السكشن قبل حفظ التاسك.");
-          return;
+          throw new Error("رقم السكشن غير صحيح. اختار السكشن مرة أخرى.");
         }
 
         const exists = sections.some(
@@ -240,19 +257,28 @@ export default function Admin() {
         );
 
         if (!exists) {
-          setMsg("السكشن المختار غير موجود. حدّث الصفحة واختار سكشن موجود.");
-          return;
+          throw new Error(
+            "السكشن غير موجود في القائمة المحملة. حدّث الصفحة وحاول مرة أخرى."
+          );
         }
 
         row.section_id = selectedSection;
       }
 
       for (const [key, , type] of res.fields) {
-        if (["number", "subject", "section", "sectionDay"].includes(type)) {
-          row[key] =
-            row[key] === "" || row[key] == null
-              ? null
-              : Number(row[key]);
+        if (
+          ["number", "subject", "section", "day", "sectionDay"].includes(
+            type
+          )
+        ) {
+          if (key === "section_id" && tab === "section_tasks") {
+            row[key] = Number(row[key]);
+          } else {
+            row[key] =
+              row[key] === "" || row[key] == null
+                ? null
+                : Number(row[key]);
+          }
         } else if (type === "datetime") {
           row[key] = row[key]
             ? new Date(row[key]).toISOString()
@@ -262,14 +288,14 @@ export default function Admin() {
         }
       }
 
-      // لا نسمح بإرسال section_id فارغ
       if (
         tab === "section_tasks" &&
-        (!Number.isFinite(row.section_id) || row.section_id <= 0)
+        (!Number.isInteger(row.section_id) || row.section_id <= 0)
       ) {
-        setMsg("رقم السكشن غير صحيح. اختار السكشن مرة أخرى.");
-        return;
+        throw new Error("رقم السكشن غير صحيح. اختار السكشن مرة أخرى.");
       }
+
+      console.log("Admin form data:", row);
 
       await saveRow(tab, row);
 
@@ -278,6 +304,7 @@ export default function Admin() {
       await load();
     } catch (error) {
       setMsg("فشل الحفظ: " + error.message);
+      console.error("Admin save error:", error);
     } finally {
       setBusy(false);
     }
@@ -359,17 +386,23 @@ export default function Admin() {
               ) : type === "section" ? (
                 <select
                   required
-                  value={form[key] ?? ""}
+                  value={form.section_id ?? ""}
                   disabled={sections.length === 0}
-                  onChange={(event) => set(key, event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+
+                    set("section_id", value);
+                    setMsg("");
+                  }}
                 >
                   <option value="">
-                    {sections.length
+                    {sections.length > 0
                       ? "اختر السكشن"
                       : "لا توجد سكاشن متاحة"}
                   </option>
+
                   {sections.map((section) => (
-                    <option key={section.id} value={section.id}>
+                    <option key={section.id} value={String(section.id)}>
                       {section.name}
                     </option>
                   ))}
@@ -381,8 +414,8 @@ export default function Admin() {
                   onChange={(event) => set(key, event.target.value)}
                 >
                   <option value="">اختر اليوم</option>
-                  {DAYS.map((day) => (
-                    <option key={day} value={day}>
+                  {DAYS.map((day, index) => (
+                    <option key={day} value={index}>
                       {day}
                     </option>
                   ))}
@@ -489,3 +522,4 @@ export default function Admin() {
     </>
   );
 }
+
