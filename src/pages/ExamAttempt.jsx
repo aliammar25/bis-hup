@@ -3,6 +3,68 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getExamForAttempt } from "../services/api.js";
 
+function getOptions(options) {
+  if (Array.isArray(options)) {
+    return options.map((option, index) => {
+      if (
+        typeof option === "string" ||
+        typeof option === "number"
+      ) {
+        return {
+          label: String(option),
+          value: String(option),
+        };
+      }
+
+      if (option && typeof option === "object") {
+        const value =
+          option.key ??
+          option.id ??
+          option.value ??
+          String.fromCharCode(65 + index);
+
+        const label =
+          option.text ??
+          option.label ??
+          option.option ??
+          option.value ??
+          option.key ??
+          `اختيار ${index + 1}`;
+
+        return {
+          label: String(label),
+          value: String(value),
+        };
+      }
+
+      return {
+        label: `اختيار ${index + 1}`,
+        value: String.fromCharCode(65 + index),
+      };
+    });
+  }
+
+  if (options && typeof options === "object") {
+    return Object.entries(options).map(([key, option]) => {
+      if (option && typeof option === "object") {
+        return {
+          label: String(
+            option.text ?? option.label ?? option.value ?? key
+          ),
+          value: String(option.key ?? option.id ?? key),
+        };
+      }
+
+      return {
+        label: String(option),
+        value: String(key),
+      };
+    });
+  }
+
+  return [];
+}
+
 export default function ExamAttempt() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -26,7 +88,7 @@ export default function ExamAttempt() {
         if (!active) return;
 
         setExam(result.exam);
-        setQuestions(result.questions);
+        setQuestions(result.questions ?? []);
       } catch (err) {
         if (active) {
           setError(err.message || "تعذر تحميل الامتحان.");
@@ -52,62 +114,24 @@ export default function ExamAttempt() {
       <main dir="rtl" role="alert">
         <h2>تعذر فتح الامتحان</h2>
         <p>{error}</p>
-        <button onClick={() => navigate("/exams")}>
+        <button
+          type="button"
+          onClick={() => navigate("/exams")}
+        >
           العودة إلى الامتحانات
         </button>
       </main>
     );
   }
 
-  
-const getOptions = (options) => {
-  if (Array.isArray(options)) {
-    return options.map((option, index) => {
-      if (typeof option === "string") {
-        return {
-          label: option,
-          value: String.fromCharCode(65 + index),
-        };
-      }
-
-      return {
-        label:
-          option.text ??
-          option.label ??
-          option.value ??
-          option.option ??
-          `اختيار ${index + 1}`,
-        value:
-          option.key ??
-          option.id ??
-          option.value ??
-          String.fromCharCode(65 + index),
-      };
-    });
-  }
-
-  if (options && typeof options === "object") {
-    return Object.entries(options).map(([key, value]) => ({
-      label:
-        typeof value === "object"
-          ? value.text ?? value.label ?? value.value ?? key
-          : value,
-      value: key,
-    }));
-  }
-
-  return [];
-};
-
-
   return (
     <main dir="rtl" className="exam-attempt-page">
-      <h1>{exam.title}</h1>
+      <h1>{exam?.title}</h1>
 
-      {exam.description && <p>{exam.description}</p>}
+      {exam?.description && <p>{exam.description}</p>}
 
-      <p>مدة الامتحان: {exam.duration_minutes} دقيقة</p>
-      <p>درجة النجاح: {exam.pass_mark}%</p>
+      <p>مدة الامتحان: {exam?.duration_minutes} دقيقة</p>
+      <p>درجة النجاح: {exam?.pass_mark}%</p>
       <p>عدد الأسئلة: {questions.length}</p>
 
       {questions.length === 0 ? (
@@ -120,6 +144,12 @@ const getOptions = (options) => {
             <section
               key={question.id}
               className="exam-question"
+              style={{
+                margin: "20px 0",
+                padding: "16px",
+                border: "1px solid #ddd",
+                borderRadius: "12px",
+              }}
             >
               <h3>
                 السؤال {index + 1}: {question.prompt}
@@ -130,52 +160,63 @@ const getOptions = (options) => {
               {options.length === 0 ? (
                 <p>لا توجد اختيارات لهذا السؤال.</p>
               ) : (
-                <div>
-                  {options.map((option, optionIndex) => {
-                    const value =
-                      option &&
-                      typeof option === "object"
-                        ? option.value ?? option.label
-                        : option;
+                options.map((option) => {
+                  const selected =
+                    String(answers[question.id] ?? "") ===
+                    option.value;
 
-                    const label =
-                      option &&
-                      typeof option === "object"
-                        ? option.label ?? option.value
-                        : option;
-
-                    return (
-                      <label
-                        key={optionIndex}
-                        style={{
-                          display: "block",
-                          margin: "12px 0",
-                          cursor: "pointer",
+                  return (
+                    <label
+                      key={`${question.id}-${option.value}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        margin: "10px 0",
+                        padding: "12px",
+                        border: selected
+                          ? "2px solid #2563eb"
+                          : "1px solid #ddd",
+                        borderRadius: "8px",
+                        background: selected
+                          ? "#eff6ff"
+                          : "transparent",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name={`question-${question.id}`}
+                        value={option.value}
+                        checked={selected}
+                        onChange={() => {
+                          setAnswers((previous) => ({
+                            ...previous,
+                            [question.id]: option.value,
+                          }));
                         }}
-                      >
-                        <input
-                          type="radio"
-                          name={`question-${question.id}`}
-                          checked={
-                            answers[question.id] === value
-                          }
-                          onChange={() =>
-                            setAnswers((previous) => ({
-                              ...previous,
-                              [question.id]: value,
-                            }))
-                          }
-                        />{" "}
-                        {String(label)}
-                      </label>
-                    );
-                  })}
-                </div>
+                      />
+
+                      <span>{option.label}</span>
+                    </label>
+                  );
+                })
               )}
             </section>
           );
         })
       )}
+
+      <p>
+        تمت الإجابة عن{" "}
+        {
+          questions.filter(
+            (question) =>
+              answers[question.id] !== undefined
+          ).length
+        }{" "}
+        من {questions.length} أسئلة.
+      </p>
 
       <button
         type="button"
@@ -183,11 +224,6 @@ const getOptions = (options) => {
       >
         العودة إلى الامتحانات
       </button>
-
-      <p>
-        تمت الإجابة عن {Object.keys(answers).length} من{" "}
-        {questions.length} أسئلة.
-      </p>
     </main>
   );
 }
