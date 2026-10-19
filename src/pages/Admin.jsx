@@ -6,6 +6,9 @@ import {
   saveRow,
   deleteRow,
   uploadFile,
+  getExamAnswerKey,
+  saveExamAnswerKey,
+  getExamAttempts,
 } from "../services/api.js";
 import Login from "./Login.jsx";
 
@@ -37,7 +40,6 @@ const RES = {
       ["doctor_name", "الدكتور", "text"],
     ],
   },
-
   lectures: {
     label: "المحاضرات",
     title: (r) => r.title,
@@ -48,7 +50,6 @@ const RES = {
       ["file_url", "الملف", "file"],
     ],
   },
-
   tasks: {
     label: "التاسكات",
     title: (r) => r.title,
@@ -60,7 +61,6 @@ const RES = {
       ["file_url", "ملف التكليف", "file"],
     ],
   },
-
   timetable: {
     label: "الجدول",
     title: (r) =>
@@ -75,7 +75,6 @@ const RES = {
       ["location", "المكان", "text"],
     ],
   },
-
   sections: {
     label: "السكاشن",
     title: (r) => r.name,
@@ -89,7 +88,6 @@ const RES = {
       ["place", "المكان", "text"],
     ],
   },
-
   section_tasks: {
     label: "تاسكات السكاشن",
     title: (r) => r.title,
@@ -101,36 +99,58 @@ const RES = {
       ["file_url", "ملف التاسك", "file"],
     ],
   },
+
+  // إدارة الامتحانات
+  exams: {
+    label: "الامتحانات",
+    title: (r) => r.title,
+    fields: [
+      ["title", "اسم الامتحان", "text"],
+      ["description", "الوصف", "text"],
+      ["subject_id", "المادة", "subjectOptional"],
+      ["audience", "الفئة المستهدفة", "audience"],
+      ["section_id", "السكشن (اختياري)", "sectionOptional"],
+      ["duration_minutes", "المدة بالدقائق", "number"],
+      ["pass_mark", "درجة النجاح", "number"],
+      ["sort_order", "ترتيب الامتحان", "number"],
+      ["is_published", "نشر الامتحان", "checkbox"],
+    ],
+  },
+
+  exam_questions: {
+    label: "أسئلة الامتحانات",
+    title: (r) => r.prompt,
+    fields: [
+      ["exam_id", "الامتحان", "exam"],
+      ["prompt", "نص السؤال", "text"],
+      ["question_type", "نوع السؤال", "questionType"],
+      ["options", "الاختيارات بصيغة JSON", "json"],
+      ["points", "درجة السؤال", "number"],
+      ["sort_order", "ترتيب السؤال", "number"],
+      ["correct_answer", "الإجابة الصحيحة بصيغة JSON", "json"],
+    ],
+  },
 };
 
 const toLocal = (value) => {
   if (!value) return "";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return "";
-
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-
   return date.toISOString().slice(0, 16);
 };
 
 const toIso = (value, label) => {
   if (!value) return null;
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     throw new Error(`قيمة ${label} غير صحيحة.`);
   }
-
   return date.toISOString();
 };
 
 const normalizeTime = (value) => {
-  if (value == null || String(value).trim() === "") {
-    return null;
-  }
+  if (value == null || String(value).trim() === "") return null;
 
   const time = String(value).trim();
 
@@ -143,12 +163,12 @@ const normalizeTime = (value) => {
 
 const timeToSeconds = (value) => {
   const [hours, minutes, seconds = "0"] = value.split(":");
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+};
 
-  return (
-    Number(hours) * 3600 +
-    Number(minutes) * 60 +
-    Number(seconds)
-  );
+const jsonText = (value, fallback = "[]") => {
+  if (value == null || value === "") return fallback;
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
 };
 
 export default function Admin() {
@@ -158,40 +178,43 @@ export default function Admin() {
   const [rows, setRows] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [sections, setSections] = useState([]);
+  const [exams, setExams] = useState([]);
   const [form, setForm] = useState({});
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
   const res = RES[tab];
+  const isResultsTab = tab === "exam_results";
 
   const set = (key, value) => {
-    setForm((current) => ({
-      ...current,
-      [key]: value,
-    }));
+    setForm((current) => ({ ...current, [key]: value }));
   };
 
   const load = useCallback(async () => {
     try {
       setMsg("");
 
-      const [currentRows, subjectRows] = await Promise.all([
-        listAll(tab),
+      const [subjectRows, examRows, sectionRows] = await Promise.all([
         listAll("subjects"),
+        listAll("exams"),
+        listAll("sections"),
       ]);
 
-      setRows(currentRows ?? []);
       setSubjects(subjectRows ?? []);
+      setExams(examRows ?? []);
+      setSections(sectionRows ?? []);
 
-      if (tab === "sections" || tab === "section_tasks") {
-        const sectionRows =
-          tab === "sections"
-            ? currentRows
-            : await listAll("sections");
-
-        setSections(sectionRows ?? []);
+      if (tab === "exam_results") {
+        setRows(await getExamAttempts());
       } else {
-        setSections([]);
+        const currentRows = await listAll(tab);
+        setRows(currentRows ?? []);
+      }
+
+      if (tab === "exam_questions") {
+        // عرض الإجابة الصحيحة داخل نموذج التعديل فقط.
+        // لا تُضاف الإجابة الصحيحة إلى بيانات الأسئلة العامة.
+        setForm((current) => current);
       }
     } catch (error) {
       setMsg(
@@ -219,27 +242,20 @@ export default function Admin() {
     );
   }
 
-  if (!ready) {
-    return <p className="mut">جاري التحميل...</p>;
-  }
-
-  if (!session) {
-    return <Login />;
-  }
+  if (!ready) return <p className="mut">جاري التحميل...</p>;
+  if (!session) return <Login />;
 
   if (!isAdmin) {
     return (
       <>
         <h1>لوحة الأدمن</h1>
         <p className="mut">هذا الحساب ليس أدمن.</p>
-        <button className="btn g" onClick={logout}>
-          خروج
-        </button>
+        <button className="btn g" onClick={logout}>خروج</button>
       </>
     );
   }
 
-  const edit = (row) => {
+  const edit = async (row) => {
     const next = { ...row };
 
     for (const key of ["due_date", "deadline"]) {
@@ -247,31 +263,35 @@ export default function Admin() {
     }
 
     for (const key of ["start_time", "end_time"]) {
-      if (next[key]) {
-        next[key] = String(next[key]).slice(0, 5);
-      }
+      if (next[key]) next[key] = String(next[key]).slice(0, 5);
     }
 
-    // الاحتفاظ بمعرفات UUID كنصوص.
-    for (const key of ["subject_id", "section_id"]) {
-      if (next[key] != null) {
-        next[key] = String(next[key]);
-      }
+    for (const key of ["subject_id", "section_id", "exam_id"]) {
+      if (next[key] != null) next[key] = String(next[key]);
     }
 
-    for (const key of ["week_number", "day_of_week"]) {
-      if (next[key] != null) {
-        next[key] = String(next[key]);
+    for (const key of ["week_number", "day_of_week", "duration_minutes", "pass_mark", "points", "sort_order"]) {
+      if (next[key] != null) next[key] = String(next[key]);
+    }
+
+    if (tab === "exam_questions") {
+      next.options = jsonText(next.options);
+
+      try {
+        const key = await getExamAnswerKey(row.id);
+        next.correct_answer = key
+          ? jsonText(key.correct_answer, '""')
+          : '""';
+      } catch (error) {
+        setMsg("تعذّر تحميل الإجابة الصحيحة: " + error.message);
+        return;
       }
     }
 
     setForm(next);
     setMsg("");
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const onFile = async (key, file) => {
@@ -282,14 +302,10 @@ export default function Admin() {
 
     try {
       const url = await uploadFile(file);
-
       set(key, url);
       setMsg("تم رفع الملف.");
     } catch (error) {
-      setMsg(
-        "فشل رفع الملف: " +
-          (error?.message ?? "خطأ غير معروف")
-      );
+      setMsg("فشل رفع الملف: " + (error?.message ?? "خطأ غير معروف"));
     } finally {
       setBusy(false);
     }
@@ -297,157 +313,146 @@ export default function Admin() {
 
   const submit = async (event) => {
     event.preventDefault();
-
-    if (busy) return;
+    if (busy || isResultsTab) return;
 
     setBusy(true);
     setMsg("");
 
     try {
       const row = { ...form };
+      const answerText = row.correct_answer;
+      delete row.correct_answer;
 
-      // التحقق من اختيار السكشن قبل حفظ التاسك.
       if (tab === "section_tasks") {
-        const selectedSection = String(
-          row.section_id ?? ""
-        ).trim();
+        const selectedSection = String(row.section_id ?? "").trim();
 
         if (!selectedSection) {
-          throw new Error(
-            "من فضلك اختار السكشن قبل حفظ التاسك."
-          );
+          throw new Error("اختار السكشن قبل حفظ التاسك.");
         }
 
-        const exists = sections.some(
-          (section) =>
-            String(section.id) === selectedSection
-        );
-
-        if (!exists) {
-          throw new Error(
-            "السكشن المختار غير موجود. حدّث الصفحة واختاره مرة أخرى."
-          );
+        if (!sections.some((section) => String(section.id) === selectedSection)) {
+          throw new Error("السكشن المختار غير موجود. حدّث الصفحة واختاره مرة أخرى.");
         }
 
         row.section_id = selectedSection;
       }
 
-      // معالجة الحقول حسب نوعها.
       for (const [key, label, type] of res.fields) {
+        if (key === "correct_answer") continue;
+
         const value = row[key];
 
-        if (type === "subject" || type === "section") {
-          row[key] =
-            value == null || String(value).trim() === ""
-              ? null
-              : String(value).trim();
+        if (type === "subject" || type === "subjectOptional" || type === "section" || type === "sectionOptional" || type === "exam") {
+          row[key] = value == null || String(value).trim() === ""
+            ? null
+            : String(value).trim();
         } else if (type === "number") {
           if (value == null || value === "") {
             row[key] = null;
           } else {
             const number = Number(value);
-
             if (!Number.isFinite(number)) {
-              throw new Error(
-                `${label} يجب أن يكون رقمًا صحيحًا.`
-              );
+              throw new Error(`${label} يجب أن يكون رقمًا.`);
             }
-
             row[key] = number;
           }
-        } else if (
-          type === "day" ||
-          type === "sectionDay"
-        ) {
+        } else if (type === "checkbox") {
+          row[key] = value === true || value === "true";
+        } else if (type === "day" || type === "sectionDay") {
           if (value == null || value === "") {
             row[key] = null;
           } else {
             const day = Number(value);
             const maxDay = type === "day" ? 5 : 6;
 
-            if (
-              !Number.isInteger(day) ||
-              day < 0 ||
-              day > maxDay
-            ) {
-              throw new Error(
-                `اختيار ${label} غير صحيح.`
-              );
+            if (!Number.isInteger(day) || day < 0 || day > maxDay) {
+              throw new Error(`اختيار ${label} غير صحيح.`);
             }
-
             row[key] = day;
           }
         } else if (type === "datetime") {
           row[key] = toIso(value, label);
         } else if (type === "time") {
           row[key] = normalizeTime(value);
-        } else if (
-          typeof value === "string" &&
-          value.trim() === ""
-        ) {
+        } else if (type === "json") {
+          try {
+            row[key] = JSON.parse(value || "[]");
+          } catch {
+            throw new Error(`${label}: اكتب JSON صحيحًا.`);
+          }
+        } else if (typeof value === "string" && value.trim() === "") {
           row[key] = null;
         }
       }
 
-      // التحقق من الوقت قبل الإرسال إلى Supabase.
+      if (tab === "exams") {
+        if (!row.title?.trim()) throw new Error("اكتب اسم الامتحان.");
+        if (!Number.isFinite(row.duration_minutes) || row.duration_minutes < 1) {
+          throw new Error("مدة الامتحان يجب أن تكون دقيقة واحدة على الأقل.");
+        }
+        if (!Number.isFinite(row.pass_mark) || row.pass_mark < 0) {
+          throw new Error("درجة النجاح يجب أن تكون صفرًا أو أكثر.");
+        }
+        if (!row.audience) row.audience = "all";
+        if (row.audience !== "section") row.section_id = null;
+        if (row.audience === "section" && !row.section_id) {
+          throw new Error("اختار السكشن المخصص له الامتحان.");
+        }
+      }
+
+      if (tab === "exam_questions") {
+        if (!row.exam_id) throw new Error("اختار الامتحان.");
+        if (!row.prompt?.trim()) throw new Error("اكتب نص السؤال.");
+        if (!row.question_type) throw new Error("اختار نوع السؤال.");
+        if (!Number.isFinite(row.points) || row.points <= 0) {
+          throw new Error("درجة السؤال يجب أن تكون أكبر من صفر.");
+        }
+
+        // حذف المعرفات الزمنية التي تنشئها قاعدة البيانات.
+        delete row.created_at;
+      }
+
       if (tab === "sections" || tab === "timetable") {
         const start = row.start_time;
         const end = row.end_time;
 
-        // الجدول يحتاج إلى وقت بداية ونهاية.
         if (tab === "timetable" && (!start || !end)) {
-          throw new Error(
-            "من فضلك أدخل وقت البداية ووقت النهاية للجدول."
-          );
+          throw new Error("أدخل وقت البداية ووقت النهاية.");
         }
 
-        // يسمح السكشن بوقت فارغ حسب قيد قاعدة البيانات.
-        // إذا وُجد الوقتان، يجب أن تكون النهاية بعد البداية.
-        if (start && end) {
-          if (timeToSeconds(end) <= timeToSeconds(start)) {
-            throw new Error(
-              "وقت النهاية يجب أن يكون بعد وقت البداية."
-            );
+        if (start && end && timeToSeconds(end) <= timeToSeconds(start)) {
+          throw new Error("وقت النهاية يجب أن يكون بعد وقت البداية.");
+        }
+      }
+
+      const savedRows = await saveRow(tab, row);
+      const saved = Array.isArray(savedRows) ? savedRows[0] : savedRows;
+
+      if (tab === "exam_questions") {
+        const questionId = saved?.id ?? row.id;
+
+        if (!questionId) {
+          throw new Error("تم حفظ السؤال لكن لم يرجع معرّفه. راجع صلاحيات الإرجاع في Supabase.");
+        }
+
+        if (answerText != null && String(answerText).trim() !== "") {
+          let parsedAnswer;
+
+          try {
+            parsedAnswer = JSON.parse(answerText);
+          } catch {
+            throw new Error("الإجابة الصحيحة يجب أن تكون JSON صالحًا، مثل \"A\" أو 1.");
           }
+
+          await saveExamAnswerKey(questionId, parsedAnswer);
         }
       }
-
-      if (
-        tab === "section_tasks" &&
-        (typeof row.section_id !== "string" ||
-          !row.section_id.trim())
-      ) {
-        throw new Error("معرّف السكشن غير صالح.");
-      }
-
-      // طباعة البيانات الفعلية المرسلة لتسهيل تشخيص الأخطاء.
-      if (tab === "sections") {
-        console.log("Section payload:", {
-          id: row.id,
-          subject_id: row.subject_id,
-          name: row.name,
-          instructor_name: row.instructor_name,
-          day_of_week: row.day_of_week,
-          start_time: row.start_time,
-          end_time: row.end_time,
-          place: row.place,
-        });
-      }
-
-      console.log("Final row sent to saveRow:", row);
-
-      await saveRow(tab, row);
 
       setForm({});
       setMsg("تم الحفظ بنجاح ✅");
-
       await load();
     } catch (error) {
-      setMsg(
-        "فشل الحفظ: " +
-          (error?.message ?? "حدث خطأ غير معروف")
-      );
-
+      setMsg("فشل الحفظ: " + (error?.message ?? "خطأ غير معروف"));
       console.error("Admin save error:", error);
     } finally {
       setBusy(false);
@@ -455,26 +460,178 @@ export default function Admin() {
   };
 
   const del = async (id) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذا العنصر؟")) {
-      return;
-    }
+    if (!window.confirm("هل أنت متأكد من حذف هذا العنصر؟")) return;
 
     setBusy(true);
     setMsg("");
 
     try {
       await deleteRow(tab, id);
-
       setMsg("تم الحذف بنجاح.");
       await load();
     } catch (error) {
-      setMsg(
-        "فشل الحذف: " +
-          (error?.message ?? "خطأ غير معروف")
-      );
+      setMsg("فشل الحذف: " + (error?.message ?? "خطأ غير معروف"));
     } finally {
       setBusy(false);
     }
+  };
+
+  const tabs = [
+    ...Object.entries(RES).map(([key, value]) => ({
+      key,
+      label: value.label,
+    })),
+    { key: "exam_results", label: "نتائج الامتحانات" },
+  ];
+
+  const renderField = ([key, label, type]) => {
+    const value = form[key] ?? "";
+
+    const common = {
+      name: key,
+      value,
+      onChange: (event) => set(key, event.target.value),
+    };
+
+    if (type === "checkbox") {
+      return (
+        <input
+          name={key}
+          type="checkbox"
+          checked={value === true || value === "true"}
+          onChange={(event) => set(key, event.target.checked)}
+        />
+      );
+    }
+
+    if (type === "subject" || type === "subjectOptional") {
+      return (
+        <select
+          {...common}
+          required={type === "subject"}
+        >
+          <option value="">
+            {type === "subject" ? "اختر المادة" : "بدون مادة"}
+          </option>
+          {subjects.map((subject) => (
+            <option key={subject.id} value={String(subject.id)}>
+              {subject.name}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (type === "section" || type === "sectionOptional") {
+      return (
+        <select {...common} required={type === "section"}>
+          <option value="">
+            {type === "section" ? "اختر السكشن" : "بدون سكشن"}
+          </option>
+          {sections.map((section) => (
+            <option key={section.id} value={String(section.id)}>
+              {section.name}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (type === "exam") {
+      return (
+        <select {...common} required>
+          <option value="">اختر الامتحان</option>
+          {exams.map((exam) => (
+            <option key={exam.id} value={String(exam.id)}>
+              {exam.title}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (type === "audience") {
+      return (
+        <select {...common} required>
+          <option value="all">كل الطلاب</option>
+          <option value="section">سكشن محدد</option>
+        </select>
+      );
+    }
+
+    if (type === "questionType") {
+      return (
+        <select {...common} required>
+          <option value="">اختر نوع السؤال</option>
+          <option value="mcq">اختيار من متعدد (mcq)</option>
+          <option value="true_false">صح أو خطأ (true_false)</option>
+          <option value="short_answer">إجابة قصيرة (short_answer)</option>
+        </select>
+      );
+    }
+
+    if (type === "day" || type === "sectionDay") {
+      const days = type === "day" ? DAYS : SECTION_DAYS;
+
+      return (
+        <select {...common} required>
+          <option value="">اختر اليوم</option>
+          {days.map((day, index) => (
+            <option key={day} value={index}>{day}</option>
+          ))}
+        </select>
+      );
+    }
+
+    if (type === "file") {
+      return (
+        <>
+          <input
+            type="file"
+            disabled={busy}
+            onChange={(event) => onFile(key, event.target.files?.[0])}
+          />
+          <input
+            {...common}
+            type="url"
+            placeholder="أو الصق رابط الملف"
+          />
+        </>
+      );
+    }
+
+    if (type === "json") {
+      return (
+        <textarea
+          {...common}
+          rows={4}
+          placeholder={
+            key === "options"
+              ? '[{"label":"A","text":"الإجابة الأولى"},{"label":"B","text":"الإجابة الثانية"}]'
+              : '"A"'
+          }
+        />
+      );
+    }
+
+    return (
+      <input
+        {...common}
+        required={
+          ["name", "title", "prompt", "question_type"].includes(key) ||
+          (type === "datetime" && tab === "tasks")
+        }
+        type={
+          type === "datetime"
+            ? "datetime-local"
+            : type === "number"
+              ? "number"
+              : type
+        }
+        min={type === "number" ? 0 : undefined}
+        step={type === "number" ? "any" : undefined}
+      />
+    );
   };
 
   return (
@@ -482,7 +639,7 @@ export default function Admin() {
       <h1>لوحة الأدمن</h1>
 
       <div className="bar">
-        {Object.entries(RES).map(([key, value]) => (
+        {tabs.map(({ key, label }) => (
           <button
             key={key}
             type="button"
@@ -493,217 +650,138 @@ export default function Admin() {
               setMsg("");
             }}
           >
-            {value.label}
+            {label}
           </button>
         ))}
 
-        <button
-          type="button"
-          className="btn g"
-          onClick={logout}
-        >
+        <button type="button" className="btn g" onClick={logout}>
           خروج
         </button>
       </div>
 
-      <form className="card" onSubmit={submit}>
-        <b>
-          {form.id ? "تعديل" : "إضافة"} — {res.label}
-        </b>
+      {msg && <p className="mut">{msg}</p>}
 
-        <div className="bar" style={{ marginTop: 12 }}>
-          {res.fields.map(([key, label, type]) => (
-            <label
-              key={key}
-              className="mut"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 4,
-              }}
-            >
-              {label}
+      {isResultsTab ? (
+        <>
+          <h2>نتائج ومحاولات الامتحانات ({rows.length})</h2>
+          <div className="card">
+            {rows.length ? rows.map((attempt) => {
+              const exam = exams.find(
+                (item) => String(item.id) === String(attempt.exam_id)
+              );
 
-              {type === "subject" ? (
-                <select
-                  name={key}
-                  required
-                  value={form[key] ?? ""}
-                  onChange={(event) =>
-                    set(key, event.target.value)
-                  }
-                >
-                  <option value="">اختر المادة</option>
+              return (
+                <div className="row" key={attempt.id}>
+                  <div>
+                    <b>{exam?.title ?? `امتحان #${attempt.exam_id}`}</b>
+                    <p className="mut">
+                      الطالب: {attempt.student_id}
+                    </p>
+                    <p className="mut">
+                      الدرجة: {attempt.score ?? "لم تُصحح"} / {attempt.max_score ?? "—"}
+                    </p>
+                    <p className="mut">
+                      الصحيحة: {attempt.correct_count} — الخطأ: {attempt.wrong_count}
+                    </p>
+                    <p className="mut">
+                      بدأ: {attempt.started_at
+                        ? new Date(attempt.started_at).toLocaleString("ar-EG")
+                        : "—"}
+                    </p>
+                    <p className="mut">
+                      سلّم: {attempt.submitted_at
+                        ? new Date(attempt.submitted_at).toLocaleString("ar-EG")
+                        : "لم يسلّم"}
+                    </p>
+                  </div>
+                </div>
+              );
+            }) : <p className="mut">لا توجد محاولات حتى الآن.</p>}
+          </div>
+        </>
+      ) : (
+        <>
+          <form className="card" onSubmit={submit}>
+            <b>{form.id ? "تعديل" : "إضافة"} — {res.label}</b>
 
-                  {subjects.map((subject) => (
-                    <option
-                      key={subject.id}
-                      value={String(subject.id)}
-                    >
-                      {subject.name}
-                    </option>
-                  ))}
-                </select>
-              ) : type === "section" ? (
-                <select
-                  name={key}
-                  required
-                  value={form.section_id ?? ""}
-                  disabled={sections.length === 0}
-                  onChange={(event) => {
-                    set("section_id", event.target.value);
-                    setMsg("");
+            <div className="bar" style={{ marginTop: 12 }}>
+              {res.fields.map(([key, label, type]) => (
+                <label
+                  key={key}
+                  className="mut"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                    minWidth: 180,
                   }}
                 >
-                  <option value="">
-                    {sections.length > 0
-                      ? "اختر السكشن"
-                      : "لا توجد سكاشن متاحة"}
-                  </option>
-
-                  {sections.map((section) => (
-                    <option
-                      key={section.id}
-                      value={String(section.id)}
-                    >
-                      {section.name}
-                    </option>
-                  ))}
-                </select>
-              ) : type === "day" ? (
-                <select
-                  name={key}
-                  required
-                  value={form[key] ?? ""}
-                  onChange={(event) =>
-                    set(key, event.target.value)
-                  }
-                >
-                  <option value="">اختر اليوم</option>
-
-                  {DAYS.map((day, index) => (
-                    <option key={day} value={index}>
-                      {day}
-                    </option>
-                  ))}
-                </select>
-              ) : type === "sectionDay" ? (
-                <select
-                  name={key}
-                  required
-                  value={form[key] ?? ""}
-                  onChange={(event) =>
-                    set(key, event.target.value)
-                  }
-                >
-                  <option value="">اختر اليوم</option>
-
-                  {SECTION_DAYS.map((day, index) => (
-                    <option key={day} value={index}>
-                      {day}
-                    </option>
-                  ))}
-                </select>
-              ) : type === "file" ? (
-                <>
-                  <input
-                    type="file"
-                    disabled={busy}
-                    onChange={(event) =>
-                      onFile(key, event.target.files?.[0])
-                    }
-                  />
-
-                  <input
-                    name={key}
-                    type="url"
-                    placeholder="أو الصق رابط الملف"
-                    value={form[key] ?? ""}
-                    onChange={(event) =>
-                      set(key, event.target.value)
-                    }
-                  />
-                </>
-              ) : (
-                <input
-                  name={key}
-                  required={
-                    ["name", "title"].includes(key) ||
-                    (type === "datetime" && tab === "tasks")
-                  }
-                  type={
-                    type === "datetime"
-                      ? "datetime-local"
-                      : type
-                  }
-                  min={type === "number" ? 1 : undefined}
-                  value={form[key] ?? ""}
-                  onChange={(event) =>
-                    set(key, event.target.value)
-                  }
-                />
-              )}
-            </label>
-          ))}
-        </div>
-
-        <button className="btn" type="submit" disabled={busy}>
-          {busy ? "جاري التنفيذ..." : "حفظ"}
-        </button>{" "}
-
-        {form.id && (
-          <button
-            type="button"
-            className="btn g"
-            disabled={busy}
-            onClick={() => {
-              setForm({});
-              setMsg("");
-            }}
-          >
-            إلغاء التعديل
-          </button>
-        )}
-
-        {msg && <p className="mut">{msg}</p>}
-      </form>
-
-      <h2>
-        {res.label} الحالية ({rows.length})
-      </h2>
-
-      <div className="card">
-        {rows.length ? (
-          rows.map((row) => (
-            <div className="row" key={row.id}>
-              <b>{res.title(row) || `#${row.id}`}</b>
-
-              <span>
-                <button
-                  type="button"
-                  className="btn g"
-                  disabled={busy}
-                  onClick={() => edit(row)}
-                >
-                  تعديل
-                </button>{" "}
-
-                <button
-                  type="button"
-                  className="btn g"
-                  style={{ color: "var(--bad)" }}
-                  disabled={busy}
-                  onClick={() => del(row.id)}
-                >
-                  حذف
-                </button>
-              </span>
+                  {label}
+                  {renderField([key, label, type])}
+                </label>
+              ))}
             </div>
-          ))
-        ) : (
-          <p className="mut">لا يوجد محتوى بعد.</p>
-        )}
-      </div>
+
+            <button className="btn" type="submit" disabled={busy}>
+              {busy ? "جاري التنفيذ..." : "حفظ"}
+            </button>{" "}
+
+            {form.id && (
+              <button
+                type="button"
+                className="btn g"
+                disabled={busy}
+                onClick={() => {
+                  setForm({});
+                  setMsg("");
+                }}
+              >
+                إلغاء التعديل
+              </button>
+            )}
+          </form>
+
+          <h2>{res.label} الحالية ({rows.length})</h2>
+          <div className="card">
+            {rows.length ? rows.map((row) => (
+              <div className="row" key={row.id}>
+                <b>{res.title(row) || `#${row.id}`}</b>
+                <span>
+                  {tab === "exam_questions" && (
+                    <button
+                      type="button"
+                      className="btn g"
+                      disabled={busy}
+                      onClick={() => edit(row)}
+                    >
+                      تعديل السؤال والإجابة
+                    </button>
+                  )}{" "}
+                  {tab !== "exam_questions" && (
+                    <button
+                      type="button"
+                      className="btn g"
+                      disabled={busy}
+                      onClick={() => edit(row)}
+                    >
+                      تعديل
+                    </button>
+                  )}{" "}
+                  <button
+                    type="button"
+                    className="btn g"
+                    style={{ color: "var(--bad)" }}
+                    disabled={busy}
+                    onClick={() => del(row.id)}
+                  >
+                    حذف
+                  </button>
+                </span>
+              </div>
+            )) : <p className="mut">لا يوجد محتوى بعد.</p>}
+          </div>
+        </>
+      )}
     </>
   );
 }

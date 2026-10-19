@@ -341,3 +341,116 @@ export async function submitExamAttempt(examId, answers) {
 
   return data;
 }
+
+/* ---------- Admin: Online Exam Management ---------- */
+
+// جلب الامتحانات مع إمكانية استخدامها في قوائم الاختيار
+export async function getAdminExams() {
+  return listAll("exams");
+}
+
+// جلب أسئلة امتحان محدد
+export async function getExamQuestions(examId) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
+  return q("exam_questions", (query) =>
+    query
+      .eq("exam_id", examId)
+      .order("sort_order", { ascending: true })
+  );
+}
+
+// جلب مفتاح إجابة سؤال محدد.
+// استخدم هذه الدالة في لوحة الأدمن فقط، ولا تعرض نتيجتها للطلاب.
+export async function getExamAnswerKey(questionId) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
+  const { data, error } = await supabase
+    .from("exam_answer_key")
+    .select("question_id, correct_answer")
+    .eq("question_id", questionId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data;
+}
+
+// إضافة أو تحديث الإجابة الصحيحة لسؤال
+export async function saveExamAnswerKey(
+  questionId,
+  correctAnswer
+) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
+  if (!questionId) {
+    throw new Error("اختار السؤال أولًا.");
+  }
+
+  if (
+    correctAnswer === undefined ||
+    correctAnswer === null ||
+    correctAnswer === ""
+  ) {
+    throw new Error("اكتب الإجابة الصحيحة.");
+  }
+
+  const { data, error } = await supabase
+    .from("exam_answer_key")
+    .upsert(
+      {
+        question_id: questionId,
+        correct_answer: correctAnswer,
+      },
+      { onConflict: "question_id" }
+    )
+    .select();
+
+  if (error) {
+    console.error("Save answer key error:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+// جلب محاولات الطلاب ونتائجهم للأدمن
+export async function getExamAttempts(examId) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
+  let query = supabase
+    .from("exam_attempts")
+    .select(`
+      id,
+      exam_id,
+      student_id,
+      started_at,
+      submitted_at,
+      score,
+      max_score,
+      correct_count,
+      wrong_count
+    `)
+    .order("started_at", { ascending: false });
+
+  if (examId) {
+    query = query.eq("exam_id", examId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Load exam attempts error:", error);
+    throw error;
+  }
+
+  return data ?? [];
+}
