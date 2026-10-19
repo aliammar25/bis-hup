@@ -16,6 +16,7 @@ const toLocal = (iso) => { const d = new Date(iso); d.setMinutes(d.getMinutes() 
 export default function Admin() {
   const { session, isAdmin, ready, logout, enabled } = useAuth();
   const [tab, setTab] = useState("subjects");
+
   const [rows, setRows] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [form, setForm] = useState({});
@@ -44,8 +45,20 @@ export default function Admin() {
   const onFile = async (k, file) => {
     if (!file) return;
     setBusy(true); setMsg("جاري رفع الملف...");
-    try { set(k, await uploadFile(file)); setMsg("تم رفع الملف."); } catch (e) { setMsg("فشل الرفع: " + e.message); }
-    setBusy(false);
+    try { set(k, await uploadFile(file)); setMsg("تم رفع الملف."); } 
+    
+    
+    
+catch (e) {
+  console.error("File upload failed:", e);
+  setMsg(
+    "فشل الرفع: " +
+    (e?.message || e?.error || JSON.stringify(e) || "خطأ غير معروف")
+  );
+} finally {
+  setBusy(false);
+}
+
   };
   const submit = async (e) => {
     e.preventDefault();

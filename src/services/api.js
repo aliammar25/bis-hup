@@ -49,9 +49,45 @@ export async function deleteRow(table, id) {
   if (error) throw error;
 }
 
+// export async function uploadFile(file) {
+//   const path = `${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
+//   const { error } = await supabase.storage.from("files").upload(path, file);
+//   if (error) throw error;
+//   return supabase.storage.from("files").getPublicUrl(path).data.publicUrl;
+// }
+
 export async function uploadFile(file) {
-  const path = `${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
-  const { error } = await supabase.storage.from("files").upload(path, file);
-  if (error) throw error;
-  return supabase.storage.from("files").getPublicUrl(path).data.publicUrl;
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
+  if (!file) {
+    throw new Error("لم يتم اختيار ملف.");
+  }
+
+  const safeName = file.name.replace(/[^\w.-]/g, "_");
+  const path = `${Date.now()}-${safeName}`;
+
+  const { data, error } = await supabase.storage
+    .from("files")
+    .upload(path, file, {
+      upsert: false,
+    });
+
+  if (error) {
+    console.error("Supabase upload error:", error);
+    throw new Error(
+      error.message || error.error || JSON.stringify(error) || "خطأ غير معروف أثناء رفع الملف"
+    );
+  }
+
+  const { data: publicData } = supabase.storage
+    .from("files")
+    .getPublicUrl(data.path);
+
+  if (!publicData?.publicUrl) {
+    throw new Error("تم رفع الملف لكن تعذّر إنشاء رابط له.");
+  }
+
+  return publicData.publicUrl;
 }
