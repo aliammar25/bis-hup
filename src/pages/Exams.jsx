@@ -1,8 +1,10 @@
 
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getPublishedExams } from "../services/api.js";
 
 export default function Exams() {
+  const navigate = useNavigate();
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -17,19 +19,13 @@ export default function Exams() {
 
         const data = await getPublishedExams();
 
-        if (active) {
-          setExams(data);
-        }
+        if (active) setExams(data);
       } catch (err) {
         if (active) {
-          setError(
-            err.message || "تعذر تحميل الامتحانات."
-          );
+          setError(err.message || "تعذر تحميل الامتحانات.");
         }
       } finally {
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoading(false);
       }
     }
 
@@ -46,16 +42,12 @@ export default function Exams() {
 
   if (error) {
     return (
-      <div dir="rtl" role="alert">
+      <main dir="rtl" role="alert">
         <p>تعذر تحميل الامتحانات: {error}</p>
-
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-        >
+        <button onClick={() => window.location.reload()}>
           إعادة المحاولة
         </button>
-      </div>
+      </main>
     );
   }
 
@@ -68,31 +60,17 @@ export default function Exams() {
       ) : (
         <div className="exams-list">
           {exams.map((exam) => (
-            <article
-              key={exam.id}
-              className="exam-card"
-            >
+            <article key={exam.id} className="exam-card">
               <h2>{exam.title}</h2>
 
-              {exam.description && (
-                <p>{exam.description}</p>
-              )}
+              {exam.description && <p>{exam.description}</p>}
 
-              <p>
-                مدة الامتحان: {exam.duration_minutes} دقيقة
-              </p>
-
-              <p>
-                درجة النجاح: {exam.pass_mark}%
-              </p>
+              <p>مدة الامتحان: {exam.duration_minutes} دقيقة</p>
+              <p>درجة النجاح: {exam.pass_mark}%</p>
 
               <button
                 type="button"
-                onClick={() => {
-                  alert(
-                    "سيتم ربط بدء المحاولة وعرض الأسئلة في الخطوة التالية."
-                  );
-                }}
+                onClick={() => navigate(`/exams/${exam.id}`)}
               >
                 دخول الامتحان
               </button>
