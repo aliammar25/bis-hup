@@ -211,6 +211,7 @@ export async function getPublishedExams() {
       audience,
       section_id,
       duration_minutes,
+      pass_mark,
       sort_order
     `)
     .eq("is_published", true)
@@ -240,6 +241,7 @@ export async function getExamForAttempt(examId) {
       title,
       description,
       duration_minutes,
+      pass_mark,
       subject_id,
       audience,
       section_id
@@ -263,7 +265,7 @@ export async function getExamForAttempt(examId) {
       .select(`
         id,
         prompt,
-        quextion_type,
+        question_type,
         options,
         points,
         sort_order
