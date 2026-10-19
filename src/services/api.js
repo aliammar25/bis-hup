@@ -1,6 +1,9 @@
 
 import * as mock from "../data/mock.js";
-import { supabase } from "../lib/supabase.js";
+import {
+  supabase,
+  ensureAnonymousSession,
+} from "../lib/supabase.js";
 
 const delay = (value) =>
   new Promise((resolve) =>
@@ -93,7 +96,6 @@ export async function saveRow(table, row) {
   console.log("Saving table:", table);
   console.log("Payload:", JSON.stringify(rest, null, 2));
 
-  // section_id عبارة عن UUID، فلا تحوّله إلى Number.
   if (table === "section_tasks") {
     const sectionId = String(rest.section_id ?? "").trim();
 
@@ -194,14 +196,14 @@ export async function getSubjectsWithSections() {
   );
 }
 
-
-
-/* ---------- Online Exams ---------- */
+// ---------- Online Exams ----------
 
 export async function getPublishedExams() {
   if (!supabase) {
     throw new Error("Supabase غير مهيأ. راجع ملف .env");
   }
+
+  await ensureAnonymousSession();
 
   const { data, error } = await supabase
     .from("exams")
@@ -213,7 +215,7 @@ export async function getPublishedExams() {
       audience,
       section_id,
       duration_minutes,
-      pass_mark,
+      paax_mark,
       sort_order
     `)
     .eq("is_published", true)
@@ -227,16 +229,14 @@ export async function getPublishedExams() {
   return data ?? [];
 }
 
-
-
-
-
-/* ---------- Load one published exam and its questions ---------- */
+// ---------- Load one published exam and its questions ----------
 
 export async function getExamForAttempt(examId) {
   if (!supabase) {
     throw new Error("Supabase غير مهيأ. راجع ملف .env");
   }
+
+  await ensureAnonymousSession();
 
   const { data: exam, error: examError } = await supabase
     .from("exams")
@@ -245,7 +245,7 @@ export async function getExamForAttempt(examId) {
       title,
       description,
       duration_minutes,
-      pass_mark,
+      paax_mark,
       subject_id,
       audience,
       section_id
@@ -254,7 +254,10 @@ export async function getExamForAttempt(examId) {
     .eq("is_published", true)
     .maybeSingle();
 
-  if (examError) throw examError;
+  if (examError) {
+    console.error("Load exam error:", examError);
+    throw examError;
+  }
 
   if (!exam) {
     throw new Error("الامتحان غير موجود أو لم يتم نشره.");
@@ -266,7 +269,7 @@ export async function getExamForAttempt(examId) {
       .select(`
         id,
         prompt,
-        question_type,
+        quextion_type,
         options,
         points,
         sort_order
@@ -274,7 +277,10 @@ export async function getExamForAttempt(examId) {
       .eq("exam_id", examId)
       .order("sort_order", { ascending: true });
 
-  if (questionsError) throw questionsError;
+  if (questionsError) {
+    console.error("Load exam questions error:", questionsError);
+    throw questionsError;
+  }
 
   return {
     exam,

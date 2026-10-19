@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getExamForAttempt } from "../services/api.js";
 
@@ -16,53 +16,51 @@ function getOptions(options) {
         };
       }
 
-      if (option && typeof option === "object") {
-        const value =
-          option.key ??
-          option.id ??
-          option.value ??
-          String.fromCharCode(65 + index);
-
-        const label =
-          option.text ??
-          option.label ??
-          option.option ??
-          option.value ??
-          option.key ??
-          `اختيار ${index + 1}`;
-
-        return {
-          label: String(label),
-          value: String(value),
-        };
-      }
+      const value =
+        option?.key ??
+        option?.id ??
+        option?.value ??
+        String.fromCharCode(65 + index);
 
       return {
-        label: `اختيار ${index + 1}`,
-        value: String.fromCharCode(65 + index),
+        label: String(
+          option?.text ??
+          option?.label ??
+          option?.option ??
+          option?.value ??
+          option?.key ??
+          `اختيار ${index + 1}`
+        ),
+        value: String(value),
       };
     });
   }
 
   if (options && typeof options === "object") {
-    return Object.entries(options).map(([key, option]) => {
-      if (option && typeof option === "object") {
-        return {
-          label: String(
-            option.text ?? option.label ?? option.value ?? key
-          ),
-          value: String(option.key ?? option.id ?? key),
-        };
-      }
-
-      return {
-        label: String(option),
-        value: String(key),
-      };
-    });
+    return Object.entries(options).map(([key, option]) => ({
+      label: String(
+        typeof option === "object" && option !== null
+          ? option.text ?? option.label ?? option.value ?? key
+          : option
+      ),
+      value: String(
+        typeof option === "object" && option !== null
+          ? option.key ?? option.id ?? key
+          : key
+      ),
+    }));
   }
 
   return [];
+}
+
+function formatTime(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(
+    remainingSeconds
+  ).padStart(2, "0")}`;
 }
 
 export default function ExamAttempt() {
@@ -72,8 +70,12 @@ export default function ExamAttempt() {
   const [exam, setExam] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
+  const [remainingSeconds, setRemainingSeconds] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -89,6 +91,14 @@ export default function ExamAttempt() {
 
         setExam(result.exam);
         setQuestions(result.questions ?? []);
+
+        const duration = Number(result.exam.duration_minutes);
+
+        if (Number.isFinite(duration) && duration > 0) {
+          setRemainingSeconds(Math.floor(duration * 60));
+        } else {
+          setError("مدة الامتحان غير صحيحة.");
+        }
       } catch (err) {
         if (active) {
           setError(err.message || "تعذر تحميل الامتحان.");
@@ -105,6 +115,66 @@ export default function ExamAttempt() {
     };
   }, [id]);
 
+  const handleSubmit = useCallback(
+    (automatic = false) => {
+      if (submittingRef.current || submitted) return;
+
+      if (!automatic) {
+        const confirmed = window.confirm(
+          "هل أنت متأكد من تسليم الامتحان؟"
+        );
+
+        if (!confirmed) return;
+      }
+
+      submittingRef.current = true;
+      setSubmitted(true);
+
+      // ربط التسليم الفعلي بـ Supabase سيتم في الخطوة التالية.
+      console.log("Exam answers ready for submission:", {
+        examId: id,
+        answers,
+      });
+
+      window.alert(
+        automatic
+          ? "انتهى وقت الامتحان. تم إيقاف الإجابة، لكن يلزم ربط التسليم بقاعدة البيانات لحفظ المحاولة وتصحيحها."
+          : "تم إيقاف الإجابة. لم يتم حفظ المحاولة أو تصحيحها بعد؛ يجب ربط زر التسليم بدالة Supabase."
+      );
+    },
+    [answers, id, submitted]
+  );
+
+  useEffect(() => {
+    if (
+      loading ||
+      error ||
+      submitted ||
+      remainingSeconds === null
+    ) {
+      return;
+    }
+
+    if (remainingSeconds <= 0) {
+      handleSubmit(true);
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setRemainingSeconds((current) =>
+        current === null ? null : Math.max(0, current - 1)
+      );
+    }, 1000);
+
+    return () => window.clearTimeout(timerId);
+  }, [
+    loading,
+    error,
+    submitted,
+    remainingSeconds,
+    handleSubmit,
+  ]);
+
   if (loading) {
     return <p dir="rtl">جاري تحميل أسئلة الامتحان...</p>;
   }
@@ -114,25 +184,60 @@ export default function ExamAttempt() {
       <main dir="rtl" role="alert">
         <h2>تعذر فتح الامتحان</h2>
         <p>{error}</p>
-        <button
-          type="button"
-          onClick={() => navigate("/exams")}
-        >
+        <button type="button" onClick={() => navigate("/exams")}>
           العودة إلى الامتحانات
         </button>
       </main>
     );
   }
 
+  const answeredCount = questions.filter(
+    (question) => answers[question.id] !== undefined
+  ).length;
+
   return (
-    <main dir="rtl" className="exam-attempt-page">
+    <main
+      dir="rtl"
+      className="exam-attempt-page"
+      style={{ maxWidth: 900, margin: "0 auto", padding: 20 }}
+    >
       <h1>{exam?.title}</h1>
 
       {exam?.description && <p>{exam.description}</p>}
 
-      <p>مدة الامتحان: {exam?.duration_minutes} دقيقة</p>
-      <p>درجة النجاح: {exam?.pass_mark}%</p>
-      <p>عدد الأسئلة: {questions.length}</p>
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          padding: 16,
+          margin: "16px 0",
+          background: remainingSeconds < 60 ? "#fee2e2" : "#eff6ff",
+          border: "1px solid #cbd5e1",
+          borderRadius: 12,
+        }}
+      >
+        <strong>الوقت المتبقي: </strong>
+        <span
+          style={{
+            fontSize: 24,
+            fontWeight: "bold",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {formatTime(remainingSeconds ?? 0)}
+        </span>
+
+        <p>
+          تمت الإجابة عن {answeredCount} من {questions.length} أسئلة.
+        </p>
+      </div>
+
+      {submitted && (
+        <p role="status">
+          توقفت الإجابة عن الامتحان. لم يتم حفظ النتيجة بعد.
+        </p>
+      )}
 
       {questions.length === 0 ? (
         <p>لا توجد أسئلة مضافة لهذا الامتحان حتى الآن.</p>
@@ -146,9 +251,9 @@ export default function ExamAttempt() {
               className="exam-question"
               style={{
                 margin: "20px 0",
-                padding: "16px",
+                padding: 16,
                 border: "1px solid #ddd",
-                borderRadius: "12px",
+                borderRadius: 12,
               }}
             >
               <h3>
@@ -162,8 +267,7 @@ export default function ExamAttempt() {
               ) : (
                 options.map((option) => {
                   const selected =
-                    String(answers[question.id] ?? "") ===
-                    option.value;
+                    String(answers[question.id] ?? "") === option.value;
 
                   return (
                     <label
@@ -171,17 +275,16 @@ export default function ExamAttempt() {
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: "10px",
+                        gap: 10,
                         margin: "10px 0",
-                        padding: "12px",
+                        padding: 12,
                         border: selected
                           ? "2px solid #2563eb"
                           : "1px solid #ddd",
-                        borderRadius: "8px",
-                        background: selected
-                          ? "#eff6ff"
-                          : "transparent",
-                        cursor: "pointer",
+                        borderRadius: 8,
+                        background: selected ? "#eff6ff" : "transparent",
+                        cursor: submitted ? "not-allowed" : "pointer",
+                        opacity: submitted ? 0.7 : 1,
                       }}
                     >
                       <input
@@ -189,12 +292,13 @@ export default function ExamAttempt() {
                         name={`question-${question.id}`}
                         value={option.value}
                         checked={selected}
-                        onChange={() => {
+                        disabled={submitted}
+                        onChange={() =>
                           setAnswers((previous) => ({
                             ...previous,
                             [question.id]: option.value,
-                          }));
-                        }}
+                          }))
+                        }
                       />
 
                       <span>{option.label}</span>
@@ -207,23 +311,38 @@ export default function ExamAttempt() {
         })
       )}
 
-      <p>
-        تمت الإجابة عن{" "}
-        {
-          questions.filter(
-            (question) =>
-              answers[question.id] !== undefined
-          ).length
-        }{" "}
-        من {questions.length} أسئلة.
-      </p>
-
-      <button
-        type="button"
-        onClick={() => navigate("/exams")}
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          marginTop: 24,
+        }}
       >
-        العودة إلى الامتحانات
-      </button>
+        <button
+          type="button"
+          onClick={() => handleSubmit(false)}
+          disabled={submitted || questions.length === 0}
+          style={{
+            padding: "12px 24px",
+            border: 0,
+            borderRadius: 8,
+            background: submitted ? "#9ca3af" : "#16a34a",
+            color: "#fff",
+            fontWeight: "bold",
+            cursor: submitted ? "not-allowed" : "pointer",
+          }}
+        >
+          {submitted ? "تم إيقاف الإجابة" : "تسليم الامتحان"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate("/exams")}
+        >
+          العودة إلى الامتحانات
+        </button>
+      </div>
     </main>
   );
 }
