@@ -30,6 +30,40 @@ const SECTION_DAYS = [
   "السبت",
 ];
 
+const makeOptions = (texts = ["", ""]) =>
+  texts.map((text, index) => ({
+    label: String.fromCharCode(65 + index),
+    text,
+  }));
+
+const normalizeOptions = (options) => {
+  if (!Array.isArray(options)) return makeOptions();
+
+  return options.map((option, index) => ({
+    label:
+      option && typeof option === "object" && option.label
+        ? String(option.label)
+        : String.fromCharCode(65 + index),
+    text:
+      option && typeof option === "object"
+        ? String(option.text ?? "")
+        : String(option ?? ""),
+  }));
+};
+
+const questionOptions = (type) => {
+  if (type === "true_false") {
+    return [
+      { label: "true", text: "صح" },
+      { label: "false", text: "خطأ" },
+    ];
+  }
+
+  if (type === "short_answer") return [];
+
+  return makeOptions();
+};
+
 const RES = {
   subjects: {
     label: "المواد",
@@ -40,6 +74,7 @@ const RES = {
       ["doctor_name", "الدكتور", "text"],
     ],
   },
+
   lectures: {
     label: "المحاضرات",
     title: (r) => r.title,
@@ -50,6 +85,7 @@ const RES = {
       ["file_url", "الملف", "file"],
     ],
   },
+
   tasks: {
     label: "التاسكات",
     title: (r) => r.title,
@@ -61,6 +97,7 @@ const RES = {
       ["file_url", "ملف التكليف", "file"],
     ],
   },
+
   timetable: {
     label: "الجدول",
     title: (r) =>
@@ -75,6 +112,7 @@ const RES = {
       ["location", "المكان", "text"],
     ],
   },
+
   sections: {
     label: "السكاشن",
     title: (r) => r.name,
@@ -88,6 +126,7 @@ const RES = {
       ["place", "المكان", "text"],
     ],
   },
+
   section_tasks: {
     label: "تاسكات السكاشن",
     title: (r) => r.title,
@@ -100,7 +139,6 @@ const RES = {
     ],
   },
 
-  // إدارة الامتحانات
   exams: {
     label: "الامتحانات",
     title: (r) => r.title,
@@ -124,10 +162,10 @@ const RES = {
       ["exam_id", "الامتحان", "exam"],
       ["prompt", "نص السؤال", "text"],
       ["question_type", "نوع السؤال", "questionType"],
-      ["options", "الاختيارات بصيغة JSON", "json"],
+      ["options", "الاختيارات", "optionsEditor"],
+      ["correct_answer", "الإجابة الصحيحة", "correctAnswer"],
       ["points", "درجة السؤال", "number"],
       ["sort_order", "ترتيب السؤال", "number"],
-      ["correct_answer", "الإجابة الصحيحة بصيغة JSON", "json"],
     ],
   },
 };
@@ -142,10 +180,13 @@ const toLocal = (value) => {
 
 const toIso = (value, label) => {
   if (!value) return null;
+
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) {
     throw new Error(`قيمة ${label} غير صحيحة.`);
   }
+
   return date.toISOString();
 };
 
@@ -166,9 +207,15 @@ const timeToSeconds = (value) => {
   return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
 };
 
-const jsonText = (value, fallback = "[]") => {
-  if (value == null || value === "") return fallback;
-  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+const answerToInput = (value) => {
+  if (value == null) return "";
+
+  // الإجابة الصحيحة في قاعدة البيانات قد تكون نصًا أو رقمًا.
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
 };
 
 export default function Admin() {
@@ -205,16 +252,9 @@ export default function Admin() {
       setSections(sectionRows ?? []);
 
       if (tab === "exam_results") {
-        setRows(await getExamAttempts());
+        setRows((await getExamAttempts()) ?? []);
       } else {
-        const currentRows = await listAll(tab);
-        setRows(currentRows ?? []);
-      }
-
-      if (tab === "exam_questions") {
-        // عرض الإجابة الصحيحة داخل نموذج التعديل فقط.
-        // لا تُضاف الإجابة الصحيحة إلى بيانات الأسئلة العامة.
-        setForm((current) => current);
+        setRows((await listAll(tab)) ?? []);
       }
     } catch (error) {
       setMsg(
@@ -250,7 +290,9 @@ export default function Admin() {
       <>
         <h1>لوحة الأدمن</h1>
         <p className="mut">هذا الحساب ليس أدمن.</p>
-        <button className="btn g" onClick={logout}>خروج</button>
+        <button className="btn g" onClick={logout}>
+          خروج
+        </button>
       </>
     );
   }
@@ -270,18 +312,23 @@ export default function Admin() {
       if (next[key] != null) next[key] = String(next[key]);
     }
 
-    for (const key of ["week_number", "day_of_week", "duration_minutes", "pass_mark", "points", "sort_order"]) {
+    for (const key of [
+      "week_number",
+      "day_of_week",
+      "duration_minutes",
+      "pass_mark",
+      "points",
+      "sort_order",
+    ]) {
       if (next[key] != null) next[key] = String(next[key]);
     }
 
     if (tab === "exam_questions") {
-      next.options = jsonText(next.options);
+      next.options = normalizeOptions(row.options);
 
       try {
         const key = await getExamAnswerKey(row.id);
-        next.correct_answer = key
-          ? jsonText(key.correct_answer, '""')
-          : '""';
+        next.correct_answer = answerToInput(key?.correct_answer);
       } catch (error) {
         setMsg("تعذّر تحميل الإجابة الصحيحة: " + error.message);
         return;
@@ -290,8 +337,97 @@ export default function Admin() {
 
     setForm(next);
     setMsg("");
-
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const changeQuestionType = (type) => {
+    setForm((current) => {
+      const oldOptions = normalizeOptions(current.options);
+
+      return {
+        ...current,
+        question_type: type,
+        options:
+          type === "mcq"
+            ? oldOptions.length >= 2
+              ? oldOptions
+              : makeOptions()
+            : questionOptions(type),
+        correct_answer:
+          type === "mcq"
+            ? oldOptions.some(
+                (option) => option.label === current.correct_answer
+              )
+              ? current.correct_answer
+              : oldOptions[0]?.label ?? "A"
+            : type === "true_false"
+              ? ["true", "false"].includes(current.correct_answer)
+                ? current.correct_answer
+                : "true"
+              : current.correct_answer ?? "",
+      };
+    });
+  };
+
+  const addOption = () => {
+    setForm((current) => {
+      const options = normalizeOptions(current.options);
+
+      if (options.length >= 10) return current;
+
+      const nextLabel = String.fromCharCode(65 + options.length);
+
+      return {
+        ...current,
+        options: [...options, { label: nextLabel, text: "" }],
+      };
+    });
+  };
+
+  const updateOption = (index, text) => {
+    setForm((current) => {
+      const options = normalizeOptions(current.options);
+
+      options[index] = { ...options[index], text };
+
+      return { ...current, options };
+    });
+  };
+
+  const removeOption = (index) => {
+    setForm((current) => {
+      const options = normalizeOptions(current.options);
+      const removed = options[index];
+
+      const updated = options
+        .filter((_, i) => i !== index)
+        .map((option, i) => ({
+          ...option,
+          label: String.fromCharCode(65 + i),
+        }));
+
+      let correctAnswer = current.correct_answer;
+
+      if (removed?.label === correctAnswer) {
+        correctAnswer = updated[0]?.label ?? "";
+      } else {
+        const oldIndex = options.findIndex(
+          (option) => option.label === correctAnswer
+        );
+
+        if (oldIndex >= 0 && updated[oldIndex]) {
+          correctAnswer = updated[oldIndex].label;
+        } else if (oldIndex >= 0) {
+          correctAnswer = updated[updated.length - 1]?.label ?? "";
+        }
+      }
+
+      return {
+        ...current,
+        options: updated,
+        correct_answer: correctAnswer,
+      };
+    });
   };
 
   const onFile = async (key, file) => {
@@ -313,6 +449,7 @@ export default function Admin() {
 
   const submit = async (event) => {
     event.preventDefault();
+
     if (busy || isResultsTab) return;
 
     setBusy(true);
@@ -321,6 +458,7 @@ export default function Admin() {
     try {
       const row = { ...form };
       const answerText = row.correct_answer;
+
       delete row.correct_answer;
 
       if (tab === "section_tasks") {
@@ -330,8 +468,14 @@ export default function Admin() {
           throw new Error("اختار السكشن قبل حفظ التاسك.");
         }
 
-        if (!sections.some((section) => String(section.id) === selectedSection)) {
-          throw new Error("السكشن المختار غير موجود. حدّث الصفحة واختاره مرة أخرى.");
+        if (
+          !sections.some(
+            (section) => String(section.id) === selectedSection
+          )
+        ) {
+          throw new Error(
+            "السكشن المختار غير موجود. حدّث الصفحة واختاره مرة أخرى."
+          );
         }
 
         row.section_id = selectedSection;
@@ -342,18 +486,29 @@ export default function Admin() {
 
         const value = row[key];
 
-        if (type === "subject" || type === "subjectOptional" || type === "section" || type === "sectionOptional" || type === "exam") {
-          row[key] = value == null || String(value).trim() === ""
-            ? null
-            : String(value).trim();
+        if (
+          [
+            "subject",
+            "subjectOptional",
+            "section",
+            "sectionOptional",
+            "exam",
+          ].includes(type)
+        ) {
+          row[key] =
+            value == null || String(value).trim() === ""
+              ? null
+              : String(value).trim();
         } else if (type === "number") {
           if (value == null || value === "") {
             row[key] = null;
           } else {
             const number = Number(value);
+
             if (!Number.isFinite(number)) {
               throw new Error(`${label} يجب أن يكون رقمًا.`);
             }
+
             row[key] = number;
           }
         } else if (type === "checkbox") {
@@ -363,38 +518,45 @@ export default function Admin() {
             row[key] = null;
           } else {
             const day = Number(value);
-            const maxDay = type === "day" ? 5 : 6;
+            const maxDay = type === "day" ? 5 : 5;
 
             if (!Number.isInteger(day) || day < 0 || day > maxDay) {
               throw new Error(`اختيار ${label} غير صحيح.`);
             }
+
             row[key] = day;
           }
         } else if (type === "datetime") {
           row[key] = toIso(value, label);
         } else if (type === "time") {
           row[key] = normalizeTime(value);
-        } else if (type === "json") {
-          try {
-            row[key] = JSON.parse(value || "[]");
-          } catch {
-            throw new Error(`${label}: اكتب JSON صحيحًا.`);
-          }
         } else if (typeof value === "string" && value.trim() === "") {
           row[key] = null;
         }
       }
 
       if (tab === "exams") {
-        if (!row.title?.trim()) throw new Error("اكتب اسم الامتحان.");
-        if (!Number.isFinite(row.duration_minutes) || row.duration_minutes < 1) {
-          throw new Error("مدة الامتحان يجب أن تكون دقيقة واحدة على الأقل.");
+        if (!row.title?.trim()) {
+          throw new Error("اكتب اسم الامتحان.");
         }
+
+        if (
+          !Number.isFinite(row.duration_minutes) ||
+          row.duration_minutes < 1
+        ) {
+          throw new Error(
+            "مدة الامتحان يجب أن تكون دقيقة واحدة على الأقل."
+          );
+        }
+
         if (!Number.isFinite(row.pass_mark) || row.pass_mark < 0) {
           throw new Error("درجة النجاح يجب أن تكون صفرًا أو أكثر.");
         }
+
         if (!row.audience) row.audience = "all";
+
         if (row.audience !== "section") row.section_id = null;
+
         if (row.audience === "section" && !row.section_id) {
           throw new Error("اختار السكشن المخصص له الامتحان.");
         }
@@ -404,11 +566,43 @@ export default function Admin() {
         if (!row.exam_id) throw new Error("اختار الامتحان.");
         if (!row.prompt?.trim()) throw new Error("اكتب نص السؤال.");
         if (!row.question_type) throw new Error("اختار نوع السؤال.");
+
         if (!Number.isFinite(row.points) || row.points <= 0) {
           throw new Error("درجة السؤال يجب أن تكون أكبر من صفر.");
         }
 
-        // حذف المعرفات الزمنية التي تنشئها قاعدة البيانات.
+        if (row.question_type === "mcq") {
+          const options = normalizeOptions(row.options);
+
+          if (options.length < 2) {
+            throw new Error("أضف اختيارين على الأقل.");
+          }
+
+          if (options.some((option) => !option.text.trim())) {
+            throw new Error("اكتب نص كل الاختيارات قبل الحفظ.");
+          }
+
+          if (
+            !options.some((option) => option.label === answerText)
+          ) {
+            throw new Error("اختار الإجابة الصحيحة من الاختيارات.");
+          }
+
+          row.options = options;
+        } else if (row.question_type === "true_false") {
+          if (!["true", "false"].includes(answerText)) {
+            throw new Error("اختار الإجابة الصحيحة: صح أو خطأ.");
+          }
+
+          row.options = questionOptions("true_false");
+        } else if (row.question_type === "short_answer") {
+          if (!String(answerText ?? "").trim()) {
+            throw new Error("اكتب الإجابة النموذجية.");
+          }
+
+          row.options = [];
+        }
+
         delete row.created_at;
       }
 
@@ -420,32 +614,42 @@ export default function Admin() {
           throw new Error("أدخل وقت البداية ووقت النهاية.");
         }
 
-        if (start && end && timeToSeconds(end) <= timeToSeconds(start)) {
-          throw new Error("وقت النهاية يجب أن يكون بعد وقت البداية.");
+        if (
+          start &&
+          end &&
+          timeToSeconds(end) <= timeToSeconds(start)
+        ) {
+          throw new Error(
+            "وقت النهاية يجب أن يكون بعد وقت البداية."
+          );
         }
       }
 
       const savedRows = await saveRow(tab, row);
-      const saved = Array.isArray(savedRows) ? savedRows[0] : savedRows;
+      const saved = Array.isArray(savedRows)
+        ? savedRows[0]
+        : savedRows;
 
       if (tab === "exam_questions") {
         const questionId = saved?.id ?? row.id;
 
         if (!questionId) {
-          throw new Error("تم حفظ السؤال لكن لم يرجع معرّفه. راجع صلاحيات الإرجاع في Supabase.");
+          throw new Error(
+            "تم حفظ السؤال لكن لم يرجع معرّفه. راجع صلاحيات Supabase."
+          );
         }
 
-        if (answerText != null && String(answerText).trim() !== "") {
-          let parsedAnswer;
+        let parsedAnswer;
 
-          try {
-            parsedAnswer = JSON.parse(answerText);
-          } catch {
-            throw new Error("الإجابة الصحيحة يجب أن تكون JSON صالحًا، مثل \"A\" أو 1.");
-          }
-
-          await saveExamAnswerKey(questionId, parsedAnswer);
+        if (row.question_type === "short_answer") {
+          // الإجابة النصية تُخزن كنص داخل JSONB.
+          parsedAnswer = String(answerText).trim();
+        } else {
+          // إجابة الاختيار من متعدد أو صح وخطأ تُخزن كقيمة نصية.
+          parsedAnswer = String(answerText);
         }
+
+        await saveExamAnswerKey(questionId, parsedAnswer);
       }
 
       setForm({});
@@ -506,13 +710,11 @@ export default function Admin() {
 
     if (type === "subject" || type === "subjectOptional") {
       return (
-        <select
-          {...common}
-          required={type === "subject"}
-        >
+        <select {...common} required={type === "subject"}>
           <option value="">
             {type === "subject" ? "اختر المادة" : "بدون مادة"}
           </option>
+
           {subjects.map((subject) => (
             <option key={subject.id} value={String(subject.id)}>
               {subject.name}
@@ -528,6 +730,7 @@ export default function Admin() {
           <option value="">
             {type === "section" ? "اختر السكشن" : "بدون سكشن"}
           </option>
+
           {sections.map((section) => (
             <option key={section.id} value={String(section.id)}>
               {section.name}
@@ -541,6 +744,7 @@ export default function Admin() {
       return (
         <select {...common} required>
           <option value="">اختر الامتحان</option>
+
           {exams.map((exam) => (
             <option key={exam.id} value={String(exam.id)}>
               {exam.title}
@@ -561,12 +765,162 @@ export default function Admin() {
 
     if (type === "questionType") {
       return (
-        <select {...common} required>
+        <select
+          {...common}
+          required
+          onChange={(event) => changeQuestionType(event.target.value)}
+        >
           <option value="">اختر نوع السؤال</option>
-          <option value="mcq">اختيار من متعدد (mcq)</option>
-          <option value="true_false">صح أو خطأ (true_false)</option>
-          <option value="short_answer">إجابة قصيرة (short_answer)</option>
+          <option value="mcq">اختيار من متعدد</option>
+          <option value="true_false">صح أو خطأ</option>
+          <option value="short_answer">إجابة قصيرة</option>
         </select>
+      );
+    }
+
+    if (type === "optionsEditor") {
+      const questionType = form.question_type;
+      const options = normalizeOptions(form.options);
+
+      if (questionType === "short_answer") {
+        return (
+          <p className="mut">
+            هذا النوع لا يحتاج إلى اختيارات. اكتب الإجابة النموذجية في
+            خانة الإجابة الصحيحة.
+          </p>
+        );
+      }
+
+      if (questionType === "true_false") {
+        return (
+          <div style={{ display: "grid", gap: 8 }}>
+            {questionOptions("true_false").map((option) => (
+              <div
+                key={option.label}
+                className="row"
+                style={{
+                  border: "1px solid var(--border, #ddd)",
+                  borderRadius: 8,
+                  padding: 10,
+                }}
+              >
+                <span>{option.text}</span>
+                <span className="mut">
+                  {form.correct_answer === option.label
+                    ? "الإجابة الصحيحة"
+                    : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ display: "grid", gap: 10 }}>
+          {options.map((option, index) => (
+            <div
+              key={`${index}-${option.label}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  minWidth: 34,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  background: "var(--soft, #f1f1f1)",
+                  textAlign: "center",
+                }}
+              >
+                {option.label}
+              </span>
+
+              <input
+                type="text"
+                value={option.text}
+                placeholder={`الاختيار ${option.label}`}
+                aria-label={`الاختيار ${option.label}`}
+                onChange={(event) =>
+                  updateOption(index, event.target.value)
+                }
+                style={{ flex: "1 1 180px", minWidth: 0 }}
+              />
+
+              <button
+                type="button"
+                className="btn g"
+                disabled={busy || options.length <= 2}
+                onClick={() => removeOption(index)}
+                title="حذف الاختيار"
+              >
+                حذف
+              </button>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            className="btn g"
+            disabled={busy || options.length >= 10}
+            onClick={addOption}
+          >
+            + إضافة اختيار
+          </button>
+
+          <small className="mut">
+            يمكنك إضافة من اختيارين إلى 10 اختيارات.
+          </small>
+        </div>
+      );
+    }
+
+    if (type === "correctAnswer") {
+      if (form.question_type === "mcq") {
+        const options = normalizeOptions(form.options);
+
+        return (
+          <select {...common} required>
+            <option value="">اختر الإجابة الصحيحة</option>
+
+            {options
+              .filter((option) => option.text.trim())
+              .map((option) => (
+                <option key={option.label} value={option.label}>
+                  {option.label} — {option.text}
+                </option>
+              ))}
+          </select>
+        );
+      }
+
+      if (form.question_type === "true_false") {
+        return (
+          <select {...common} required>
+            <option value="">اختر الإجابة الصحيحة</option>
+            <option value="true">صح</option>
+            <option value="false">خطأ</option>
+          </select>
+        );
+      }
+
+      if (form.question_type === "short_answer") {
+        return (
+          <input
+            {...common}
+            type="text"
+            required
+            placeholder="اكتب الإجابة النموذجية"
+          />
+        );
+      }
+
+      return (
+        <p className="mut">اختار نوع السؤال أولًا.</p>
       );
     }
 
@@ -577,7 +931,9 @@ export default function Admin() {
         <select {...common} required>
           <option value="">اختر اليوم</option>
           {days.map((day, index) => (
-            <option key={day} value={index}>{day}</option>
+            <option key={day} value={index}>
+              {day}
+            </option>
           ))}
         </select>
       );
@@ -589,7 +945,9 @@ export default function Admin() {
           <input
             type="file"
             disabled={busy}
-            onChange={(event) => onFile(key, event.target.files?.[0])}
+            onChange={(event) =>
+              onFile(key, event.target.files?.[0])
+            }
           />
           <input
             {...common}
@@ -597,20 +955,6 @@ export default function Admin() {
             placeholder="أو الصق رابط الملف"
           />
         </>
-      );
-    }
-
-    if (type === "json") {
-      return (
-        <textarea
-          {...common}
-          rows={4}
-          placeholder={
-            key === "options"
-              ? '[{"label":"A","text":"الإجابة الأولى"},{"label":"B","text":"الإجابة الثانية"}]'
-              : '"A"'
-          }
-        />
       );
     }
 
@@ -664,45 +1008,69 @@ export default function Admin() {
       {isResultsTab ? (
         <>
           <h2>نتائج ومحاولات الامتحانات ({rows.length})</h2>
-          <div className="card">
-            {rows.length ? rows.map((attempt) => {
-              const exam = exams.find(
-                (item) => String(item.id) === String(attempt.exam_id)
-              );
 
-              return (
-                <div className="row" key={attempt.id}>
-                  <div>
-                    <b>{exam?.title ?? `امتحان #${attempt.exam_id}`}</b>
-                    <p className="mut">
-                      الطالب: {attempt.student_id}
-                    </p>
-                    <p className="mut">
-                      الدرجة: {attempt.score ?? "لم تُصحح"} / {attempt.max_score ?? "—"}
-                    </p>
-                    <p className="mut">
-                      الصحيحة: {attempt.correct_count} — الخطأ: {attempt.wrong_count}
-                    </p>
-                    <p className="mut">
-                      بدأ: {attempt.started_at
-                        ? new Date(attempt.started_at).toLocaleString("ar-EG")
-                        : "—"}
-                    </p>
-                    <p className="mut">
-                      سلّم: {attempt.submitted_at
-                        ? new Date(attempt.submitted_at).toLocaleString("ar-EG")
-                        : "لم يسلّم"}
-                    </p>
+          <div className="card">
+            {rows.length ? (
+              rows.map((attempt) => {
+                const exam = exams.find(
+                  (item) =>
+                    String(item.id) === String(attempt.exam_id)
+                );
+
+                return (
+                  <div className="row" key={attempt.id}>
+                    <div>
+                      <b>
+                        {exam?.title ??
+                          `امتحان #${attempt.exam_id}`}
+                      </b>
+
+                      <p className="mut">
+                        الطالب: {attempt.student_id}
+                      </p>
+
+                      <p className="mut">
+                        الدرجة: {attempt.score ?? "لم تُصحح"} /{" "}
+                        {attempt.max_score ?? "—"}
+                      </p>
+
+                      <p className="mut">
+                        الصحيحة: {attempt.correct_count} — الخطأ:{" "}
+                        {attempt.wrong_count}
+                      </p>
+
+                      <p className="mut">
+                        بدأ:{" "}
+                        {attempt.started_at
+                          ? new Date(
+                              attempt.started_at
+                            ).toLocaleString("ar-EG")
+                          : "—"}
+                      </p>
+
+                      <p className="mut">
+                        سلّم:{" "}
+                        {attempt.submitted_at
+                          ? new Date(
+                              attempt.submitted_at
+                            ).toLocaleString("ar-EG")
+                          : "لم يسلّم"}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              );
-            }) : <p className="mut">لا توجد محاولات حتى الآن.</p>}
+                );
+              })
+            ) : (
+              <p className="mut">لا توجد محاولات حتى الآن.</p>
+            )}
           </div>
         </>
       ) : (
         <>
           <form className="card" onSubmit={submit}>
-            <b>{form.id ? "تعديل" : "إضافة"} — {res.label}</b>
+            <b>
+              {form.id ? "تعديل" : "إضافة"} — {res.label}
+            </b>
 
             <div className="bar" style={{ marginTop: 12 }}>
               {res.fields.map(([key, label, type]) => (
@@ -712,8 +1080,9 @@ export default function Admin() {
                   style={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: 4,
+                    gap: 6,
                     minWidth: 180,
+                    flex: "1 1 220px",
                   }}
                 >
                   {label}
@@ -741,44 +1110,43 @@ export default function Admin() {
             )}
           </form>
 
-          <h2>{res.label} الحالية ({rows.length})</h2>
+          <h2>
+            {res.label} الحالية ({rows.length})
+          </h2>
+
           <div className="card">
-            {rows.length ? rows.map((row) => (
-              <div className="row" key={row.id}>
-                <b>{res.title(row) || `#${row.id}`}</b>
-                <span>
-                  {tab === "exam_questions" && (
+            {rows.length ? (
+              rows.map((row) => (
+                <div className="row" key={row.id}>
+                  <b>{res.title(row) || `#${row.id}`}</b>
+
+                  <span>
                     <button
                       type="button"
                       className="btn g"
                       disabled={busy}
                       onClick={() => edit(row)}
                     >
-                      تعديل السؤال والإجابة
-                    </button>
-                  )}{" "}
-                  {tab !== "exam_questions" && (
+                      {tab === "exam_questions"
+                        ? "تعديل السؤال والإجابة"
+                        : "تعديل"}
+                    </button>{" "}
+
                     <button
                       type="button"
                       className="btn g"
+                      style={{ color: "var(--bad)" }}
                       disabled={busy}
-                      onClick={() => edit(row)}
+                      onClick={() => del(row.id)}
                     >
-                      تعديل
+                      حذف
                     </button>
-                  )}{" "}
-                  <button
-                    type="button"
-                    className="btn g"
-                    style={{ color: "var(--bad)" }}
-                    disabled={busy}
-                    onClick={() => del(row.id)}
-                  >
-                    حذف
-                  </button>
-                </span>
-              </div>
-            )) : <p className="mut">لا يوجد محتوى بعد.</p>}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="mut">لا يوجد محتوى بعد.</p>
+            )}
           </div>
         </>
       )}
