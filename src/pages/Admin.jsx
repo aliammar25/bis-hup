@@ -128,11 +128,12 @@ const toIso = (value, label) => {
 };
 
 const normalizeTime = (value) => {
-  if (!value) return null;
+  if (value == null || String(value).trim() === "") {
+    return null;
+  }
 
   const time = String(value).trim();
 
-  // يقبل HH:mm أو HH:mm:ss
   if (!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time)) {
     throw new Error("صيغة الوقت غير صحيحة.");
   }
@@ -182,10 +183,12 @@ export default function Admin() {
       setRows(currentRows ?? []);
       setSubjects(subjectRows ?? []);
 
-      if (tab === "sections") {
-        setSections(currentRows ?? []);
-      } else if (tab === "section_tasks") {
-        const sectionRows = await listAll("sections");
+      if (tab === "sections" || tab === "section_tasks") {
+        const sectionRows =
+          tab === "sections"
+            ? currentRows
+            : await listAll("sections");
+
         setSections(sectionRows ?? []);
       } else {
         setSections([]);
@@ -249,7 +252,7 @@ export default function Admin() {
       }
     }
 
-    // المعرفات تظل نصوصًا، خصوصًا UUID.
+    // الاحتفاظ بمعرفات UUID كنصوص.
     for (const key of ["subject_id", "section_id"]) {
       if (next[key] != null) {
         next[key] = String(next[key]);
@@ -303,39 +306,37 @@ export default function Admin() {
     try {
       const row = { ...form };
 
-      // التحقق من السكشن قبل حفظ تاسكه.
+      // التحقق من اختيار السكشن قبل حفظ التاسك.
       if (tab === "section_tasks") {
-        const rawSectionId = row.section_id;
+        const selectedSection = String(
+          row.section_id ?? ""
+        ).trim();
 
-        if (
-          rawSectionId == null ||
-          String(rawSectionId).trim() === ""
-        ) {
-          throw new Error("من فضلك اختار السكشن قبل حفظ التاسك.");
+        if (!selectedSection) {
+          throw new Error(
+            "من فضلك اختار السكشن قبل حفظ التاسك."
+          );
         }
 
-        const selectedSection = String(rawSectionId).trim();
-
         const exists = sections.some(
-          (section) => String(section.id) === selectedSection
+          (section) =>
+            String(section.id) === selectedSection
         );
 
         if (!exists) {
           throw new Error(
-            "السكشن المختار غير موجود. حدّث الصفحة وحاول مرة أخرى."
+            "السكشن المختار غير موجود. حدّث الصفحة واختاره مرة أخرى."
           );
         }
 
-        // لا تحوّل UUID إلى رقم.
         row.section_id = selectedSection;
       }
 
-      // معالجة كل حقل حسب نوعه.
+      // معالجة الحقول حسب نوعها.
       for (const [key, label, type] of res.fields) {
         const value = row[key];
 
         if (type === "subject" || type === "section") {
-          // subject_id و section_id غالبًا UUID.
           row[key] =
             value == null || String(value).trim() === ""
               ? null
@@ -347,12 +348,17 @@ export default function Admin() {
             const number = Number(value);
 
             if (!Number.isFinite(number)) {
-              throw new Error(`${label} يجب أن يكون رقمًا صحيحًا.`);
+              throw new Error(
+                `${label} يجب أن يكون رقمًا صحيحًا.`
+              );
             }
 
             row[key] = number;
           }
-        } else if (type === "day" || type === "sectionDay") {
+        } else if (
+          type === "day" ||
+          type === "sectionDay"
+        ) {
           if (value == null || value === "") {
             row[key] = null;
           } else {
@@ -364,7 +370,9 @@ export default function Admin() {
               day < 0 ||
               day > maxDay
             ) {
-              throw new Error(`اختيار ${label} غير صحيح.`);
+              throw new Error(
+                `اختيار ${label} غير صحيح.`
+              );
             }
 
             row[key] = day;
@@ -373,24 +381,34 @@ export default function Admin() {
           row[key] = toIso(value, label);
         } else if (type === "time") {
           row[key] = normalizeTime(value);
-        } else if (typeof value === "string" && value.trim() === "") {
+        } else if (
+          typeof value === "string" &&
+          value.trim() === ""
+        ) {
           row[key] = null;
         }
       }
 
-      // التحقق من أوقات السكشن والجدول قبل إرسال البيانات.
+      // التحقق من الوقت قبل الإرسال إلى Supabase.
       if (tab === "sections" || tab === "timetable") {
         const start = row.start_time;
         const end = row.end_time;
 
-        if (!start || !end) {
-          throw new Error("من فضلك أدخل وقت البداية ووقت النهاية.");
+        // الجدول يحتاج إلى وقت بداية ونهاية.
+        if (tab === "timetable" && (!start || !end)) {
+          throw new Error(
+            "من فضلك أدخل وقت البداية ووقت النهاية للجدول."
+          );
         }
 
-        if (timeToSeconds(end) <= timeToSeconds(start)) {
-          throw new Error(
-            "وقت النهاية يجب أن يكون بعد وقت البداية."
-          );
+        // يسمح السكشن بوقت فارغ حسب قيد قاعدة البيانات.
+        // إذا وُجد الوقتان، يجب أن تكون النهاية بعد البداية.
+        if (start && end) {
+          if (timeToSeconds(end) <= timeToSeconds(start)) {
+            throw new Error(
+              "وقت النهاية يجب أن يكون بعد وقت البداية."
+            );
+          }
         }
       }
 
@@ -400,6 +418,20 @@ export default function Admin() {
           !row.section_id.trim())
       ) {
         throw new Error("معرّف السكشن غير صالح.");
+      }
+
+      // طباعة البيانات الفعلية المرسلة لتسهيل تشخيص الأخطاء.
+      if (tab === "sections") {
+        console.log("Section payload:", {
+          id: row.id,
+          subject_id: row.subject_id,
+          name: row.name,
+          instructor_name: row.instructor_name,
+          day_of_week: row.day_of_week,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          place: row.place,
+        });
       }
 
       console.log("Final row sent to saveRow:", row);
@@ -497,7 +529,9 @@ export default function Admin() {
                   name={key}
                   required
                   value={form[key] ?? ""}
-                  onChange={(event) => set(key, event.target.value)}
+                  onChange={(event) =>
+                    set(key, event.target.value)
+                  }
                 >
                   <option value="">اختر المادة</option>
 
@@ -541,7 +575,9 @@ export default function Admin() {
                   name={key}
                   required
                   value={form[key] ?? ""}
-                  onChange={(event) => set(key, event.target.value)}
+                  onChange={(event) =>
+                    set(key, event.target.value)
+                  }
                 >
                   <option value="">اختر اليوم</option>
 
@@ -556,7 +592,9 @@ export default function Admin() {
                   name={key}
                   required
                   value={form[key] ?? ""}
-                  onChange={(event) => set(key, event.target.value)}
+                  onChange={(event) =>
+                    set(key, event.target.value)
+                  }
                 >
                   <option value="">اختر اليوم</option>
 
@@ -581,7 +619,9 @@ export default function Admin() {
                     type="url"
                     placeholder="أو الصق رابط الملف"
                     value={form[key] ?? ""}
-                    onChange={(event) => set(key, event.target.value)}
+                    onChange={(event) =>
+                      set(key, event.target.value)
+                    }
                   />
                 </>
               ) : (
@@ -589,7 +629,7 @@ export default function Admin() {
                   name={key}
                   required={
                     ["name", "title"].includes(key) ||
-                    ["datetime", "time"].includes(type)
+                    (type === "datetime" && tab === "tasks")
                   }
                   type={
                     type === "datetime"
@@ -598,7 +638,9 @@ export default function Admin() {
                   }
                   min={type === "number" ? 1 : undefined}
                   value={form[key] ?? ""}
-                  onChange={(event) => set(key, event.target.value)}
+                  onChange={(event) =>
+                    set(key, event.target.value)
+                  }
                 />
               )}
             </label>
