@@ -1,4 +1,3 @@
-
 import * as mock from "../data/mock.js";
 import {
   supabase,
@@ -282,4 +281,63 @@ export async function getExamForAttempt(examId) {
     exam,
     questions: questions ?? [],
   };
+}
+
+// ---------- Submit Online Exam ----------
+
+export async function submitExamAttempt(examId, answers) {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
+  await ensureAnonymousSession();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) throw userError;
+
+  if (!user) {
+    throw new Error("تعذر تحديد الطالب. حدّث الصفحة وحاول مرة أخرى.");
+  }
+
+  // إنشاء سجل المحاولة المرتبط بالطالب الحالي.
+  const { data: attempt, error: attemptError } = await supabase
+    .from("exam_attempts")
+    .insert({
+      exam_id: examId,
+      student_id: user.id,
+    })
+    .select("id")
+    .single();
+
+  if (attemptError) {
+    console.error("Create exam attempt error:", attemptError);
+    throw attemptError;
+  }
+
+  // الدالة في قاعدة البيانات تتوقع مصفوفة من question_id و answer.
+  const p_answers = Object.entries(answers).map(
+    ([question_id, answer]) => ({
+      question_id,
+      answer,
+    })
+  );
+
+  const { data, error } = await supabase.rpc(
+    "submit_exam_attempt",
+    {
+      p_attempt_id: attempt.id,
+      p_answers,
+    }
+  );
+
+  if (error) {
+    console.error("Submit exam error:", error);
+    throw error;
+  }
+
+  return data;
 }

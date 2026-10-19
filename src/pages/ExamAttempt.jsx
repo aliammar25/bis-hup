@@ -1,7 +1,9 @@
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getExamForAttempt } from "../services/api.js";
+import {
+  getExamForAttempt,
+  submitExamAttempt,
+} from "../services/api.js";
 
 function getOptions(options) {
   if (Array.isArray(options)) {
@@ -29,7 +31,7 @@ function getOptions(options) {
     });
   }
 
-  if (options && typeof options === "object" && options !== null) {
+  if (options && typeof options === "object") {
     return Object.entries(options).map(([key, option]) => ({
       label: String(
         typeof option === "object" && option !== null
@@ -68,6 +70,9 @@ export default function ExamAttempt() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [result, setResult] = useState(null);
 
   const submittingRef = useRef(false);
 
@@ -79,14 +84,14 @@ export default function ExamAttempt() {
         setLoading(true);
         setError("");
 
-        const result = await getExamForAttempt(id);
+        const response = await getExamForAttempt(id);
 
         if (!active) return;
 
-        setExam(result.exam);
-        setQuestions(result.questions ?? []);
+        setExam(response.exam);
+        setQuestions(response.questions ?? []);
 
-        const duration = Number(result.exam.duration_minutes);
+        const duration = Number(response.exam.duration_minutes);
 
         if (Number.isFinite(duration) && duration > 0) {
           setRemainingSeconds(Math.floor(duration * 60));
@@ -110,31 +115,47 @@ export default function ExamAttempt() {
   }, [id]);
 
   const handleSubmit = useCallback(
-    (automatic = false) => {
+    async (automatic = false) => {
       if (submittingRef.current || submitted) return;
 
       if (!automatic) {
         const confirmed = window.confirm(
-          "هل أنت متأكد من تسليم الامتحان؟"
+          "هل أنت متأكد من تسليم الامتحان؟ لن تتمكن من تعديل إجاباتك بعد التسليم."
         );
 
         if (!confirmed) return;
       }
 
       submittingRef.current = true;
-      setSubmitted(true);
+      setSubmitting(true);
+      setSubmitError("");
 
-      // ملاحظة: هذا يوقف الإجابة فقط، ولا يحفظ النتيجة في قاعدة البيانات.
-      console.log("Exam answers ready for submission:", {
-        examId: id,
-        answers,
-      });
+      try {
+        const submissionResult = await submitExamAttempt(id, answers);
 
-      window.alert(
-        automatic
-          ? "انتهى وقت الامتحان. لم يتم ربط الحفظ والتصحيح بقاعدة البيانات بعد."
-          : "تم إيقاف الإجابة. حفظ المحاولة والتصحيح في قاعدة البيانات لم يُربطا بعد."
-      );
+        setResult(submissionResult);
+        setSubmitted(true);
+        setRemainingSeconds(0);
+
+        window.alert(
+          automatic
+            ? "انتهى الوقت وتم تسليم الامتحان بنجاح."
+            : "تم تسليم الامتحان وحفظ النتيجة بنجاح."
+        );
+      } catch (err) {
+        console.error("Exam submission failed:", err);
+
+        setSubmitError(
+          err.message || "فشل تسليم الامتحان. حاول مرة أخرى."
+        );
+
+        window.alert(
+          `فشل تسليم الامتحان: ${err.message || "خطأ غير معروف"}`
+        );
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
     },
     [answers, id, submitted]
   );
@@ -144,6 +165,7 @@ export default function ExamAttempt() {
       loading ||
       error ||
       submitted ||
+      submitting ||
       remainingSeconds === null
     ) {
       return;
@@ -165,6 +187,7 @@ export default function ExamAttempt() {
     loading,
     error,
     submitted,
+    submitting,
     remainingSeconds,
     handleSubmit,
   ]);
@@ -216,7 +239,10 @@ export default function ExamAttempt() {
           zIndex: 5,
           padding: 16,
           margin: "16px 0",
-          background: remainingSeconds < 60 ? "#fee2e2" : "#eff6ff",
+          background:
+            remainingSeconds !== null && remainingSeconds < 60
+              ? "#fee2e2"
+              : "#eff6ff",
           border: "1px solid #cbd5e1",
           borderRadius: 12,
           boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
@@ -238,10 +264,33 @@ export default function ExamAttempt() {
         </p>
       </section>
 
-      {submitted && (
-        <p role="status" style={{ color: "#b45309" }}>
-          توقفت الإجابة. لم يتم حفظ النتيجة في قاعدة البيانات بعد.
+      {submitError && (
+        <p role="alert" style={{ color: "#dc2626" }}>
+          {submitError}
         </p>
+      )}
+
+      {result && (
+        <section
+          role="status"
+          style={{
+            margin: "20px 0",
+            padding: 20,
+            border: "1px solid #16a34a",
+            borderRadius: 12,
+            background: "#f0fdf4",
+          }}
+        >
+          <h2>تم تسليم الامتحان بنجاح</h2>
+
+          <p>
+            الدرجة: <strong>{result.score}</strong> من{" "}
+            <strong>{result.max_score}</strong>
+          </p>
+
+          <p>الإجابات الصحيحة: {result.correct_count}</p>
+          <p>الإجابات الخاطئة: {result.wrong_count}</p>
+        </section>
       )}
 
       {questions.length === 0 ? (
@@ -288,7 +337,10 @@ export default function ExamAttempt() {
                           : "1px solid #ddd",
                         borderRadius: 8,
                         background: selected ? "#eff6ff" : "#fff",
-                        cursor: submitted ? "not-allowed" : "pointer",
+                        cursor:
+                          submitted || submitting
+                            ? "not-allowed"
+                            : "pointer",
                         opacity: submitted ? 0.7 : 1,
                       }}
                     >
@@ -297,7 +349,7 @@ export default function ExamAttempt() {
                         name={`question-${question.id}`}
                         value={option.value}
                         checked={selected}
-                        disabled={submitted}
+                        disabled={submitted || submitting}
                         onChange={() =>
                           setAnswers((previous) => ({
                             ...previous,
@@ -305,6 +357,7 @@ export default function ExamAttempt() {
                           }))
                         }
                       />
+
                       <span>{option.label}</span>
                     </label>
                   );
@@ -336,23 +389,28 @@ export default function ExamAttempt() {
         <button
           type="button"
           onClick={() => handleSubmit(false)}
-          disabled={submitted || questions.length === 0}
+          disabled={submitted || submitting || questions.length === 0}
           style={{
             minWidth: 180,
             padding: "13px 24px",
             border: 0,
             borderRadius: 10,
-            background: submitted ? "#9ca3af" : "#16a34a",
+            background:
+              submitted || submitting ? "#9ca3af" : "#16a34a",
             color: "#fff",
             fontSize: 16,
             fontWeight: "bold",
             cursor:
-              submitted || questions.length === 0
+              submitted || submitting || questions.length === 0
                 ? "not-allowed"
                 : "pointer",
           }}
         >
-          {submitted ? "تم إيقاف الإجابة" : "تسليم الامتحان"}
+          {submitting
+            ? "جاري التسليم..."
+            : submitted
+              ? "تم تسليم الامتحان"
+              : "تسليم الامتحان"}
         </button>
 
         <button
