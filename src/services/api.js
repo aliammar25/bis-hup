@@ -1,3 +1,4 @@
+
 import * as mock from "../data/mock.js";
 import {
   supabase,
@@ -318,7 +319,7 @@ export async function submitExamAttempt(examId, answers) {
     throw attemptError;
   }
 
-  // الدالة في قاعدة البيانات تتوقع مصفوفة من question_id و answer.
+  // تجهيز الإجابات لإرسالها إلى دالة التصحيح في قاعدة البيانات.
   const p_answers = Object.entries(answers).map(
     ([question_id, answer]) => ({
       question_id,
@@ -344,7 +345,7 @@ export async function submitExamAttempt(examId, answers) {
 
 /* ---------- Admin: Online Exam Management ---------- */
 
-// جلب الامتحانات مع إمكانية استخدامها في قوائم الاختيار
+// جلب الامتحانات
 export async function getAdminExams() {
   return listAll("exams");
 }
@@ -362,20 +363,27 @@ export async function getExamQuestions(examId) {
   );
 }
 
-// جلب مفتاح إجابة سؤال محدد.
-// استخدم هذه الدالة في لوحة الأدمن فقط، ولا تعرض نتيجتها للطلاب.
+// جلب مفتاح الإجابة الصحيحة لسؤال محدد.
+// الجدول الصحيح: exam_answer_keys
 export async function getExamAnswerKey(questionId) {
   if (!supabase) {
     throw new Error("Supabase غير مهيأ. راجع ملف .env");
   }
 
+  if (!questionId) {
+    throw new Error("معرّف السؤال غير موجود.");
+  }
+
   const { data, error } = await supabase
-    .from("exam_answer_key")
+    .from("exam_answer_keys")
     .select("question_id, correct_answer")
     .eq("question_id", questionId)
     .maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Load answer key error:", error);
+    throw error;
+  }
 
   return data;
 }
@@ -402,7 +410,7 @@ export async function saveExamAnswerKey(
   }
 
   const { data, error } = await supabase
-    .from("exam_answer_key")
+    .from("exam_answer_keys")
     .upsert(
       {
         question_id: questionId,
@@ -410,7 +418,8 @@ export async function saveExamAnswerKey(
       },
       { onConflict: "question_id" }
     )
-    .select();
+    .select("question_id, correct_answer")
+    .single();
 
   if (error) {
     console.error("Save answer key error:", error);
@@ -419,6 +428,8 @@ export async function saveExamAnswerKey(
 
   return data;
 }
+
+// ---------- Exam Attempts and Results ----------
 
 // جلب محاولات الطلاب ونتائجهم للأدمن
 export async function getExamAttempts(examId) {
