@@ -1,7 +1,4 @@
 
- // Service layer: pages only call these functions.
-// With VITE_SUPABASE_* set it reads from Supabase; otherwise it uses mock data.
-
 import * as mock from "../data/mock.js";
 import { supabase } from "../lib/supabase.js";
 
@@ -20,9 +17,7 @@ async function q(table, build) {
 }
 
 const bySubject = (subjectId) => (query) =>
-  subjectId
-    ? query.eq("subject_id", Number(subjectId))
-    : query;
+  subjectId ? query.eq("subject_id", Number(subjectId)) : query;
 
 // ---------- Subjects ----------
 
@@ -37,8 +32,9 @@ export const getSubject = async (id) =>
         query.eq("id", Number(id)).limit(1)
       ))[0] ?? null
     : delay(
-        mock.subjects.find((subject) => subject.id === Number(id)) ??
-          null
+        mock.subjects.find(
+          (subject) => subject.id === Number(id)
+        ) ?? null
       );
 
 // ---------- Lectures ----------
@@ -78,8 +74,7 @@ export const getTimetable = () =>
     ? q("timetable", (query) => query.order("id"))
     : delay(mock.timetable);
 
-// ---------- Admin writes ----------
-// Supabase RLS policies must enforce admin-only writes.
+// ---------- Admin reads and writes ----------
 
 export const listAll = (table) =>
   q(table, (query) => query.order("id"));
@@ -87,16 +82,44 @@ export const listAll = (table) =>
 export async function saveRow(table, row) {
   const { id, created_at, ...rest } = row;
 
-  const { error } = id
+  // تشخيص البيانات قبل إرسالها إلى Supabase
+  console.log("Saving table:", table);
+  console.log("Payload:", JSON.stringify(rest, null, 2));
+
+  // التحقق من رقم السكشن في تاسكات السكاشن
+  if (table === "section_tasks") {
+    if (
+      rest.section_id == null ||
+      rest.section_id === "" ||
+      !Number.isFinite(Number(rest.section_id)) ||
+      Number(rest.section_id) <= 0
+    ) {
+      throw new Error(
+        "رقم السكشن غير موجود. اختار السكشن مرة أخرى."
+      );
+    }
+
+    rest.section_id = Number(rest.section_id);
+  }
+
+  const result = id
     ? await supabase
         .from(table)
         .update(rest)
         .eq("id", id)
+        .select()
     : await supabase
         .from(table)
-        .insert(rest);
+        .insert(rest)
+        .select();
 
-  if (error) throw error;
+  if (result.error) {
+    console.error("Supabase save error:", result.error);
+    throw result.error;
+  }
+
+  console.log("Saved row:", result.data);
+  return result.data;
 }
 
 export async function deleteRow(table, id) {
@@ -130,9 +153,7 @@ export async function uploadFile(file) {
 
   if (error) {
     console.error("Supabase upload error:", error);
-    throw new Error(
-      error.message || "خطأ أثناء رفع الملف"
-    );
+    throw new Error(error.message || "خطأ أثناء رفع الملف");
   }
 
   const { data: publicData } = supabase.storage
@@ -140,9 +161,7 @@ export async function uploadFile(file) {
     .getPublicUrl(data.path);
 
   if (!publicData?.publicUrl) {
-    throw new Error(
-      "تم رفع الملف لكن تعذّر إنشاء رابط له."
-    );
+    throw new Error("تم رفع الملف لكن تعذّر إنشاء رابط له.");
   }
 
   return publicData.publicUrl;
