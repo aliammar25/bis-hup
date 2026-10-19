@@ -93,9 +93,6 @@ export async function saveRow(table, row) {
 
   const { id, created_at, ...rest } = row;
 
-  console.log("Saving table:", table);
-  console.log("Payload:", JSON.stringify(rest, null, 2));
-
   if (table === "section_tasks") {
     const sectionId = String(rest.section_id ?? "").trim();
 
@@ -122,7 +119,6 @@ export async function saveRow(table, row) {
     throw result.error;
   }
 
-  console.log("Saved row:", result.data);
   return result.data;
 }
 
@@ -215,7 +211,6 @@ export async function getPublishedExams() {
       audience,
       section_id,
       duration_minutes,
-      paax_mark,
       sort_order
     `)
     .eq("is_published", true)
@@ -245,7 +240,6 @@ export async function getExamForAttempt(examId) {
       title,
       description,
       duration_minutes,
-      paax_mark,
       subject_id,
       audience,
       section_id
