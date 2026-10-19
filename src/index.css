@@ -366,3 +366,231 @@ th {
     flex-wrap: wrap;
   }
 }
+
+
+
+/* ==============================
+   BIS Hub - Admin Exams
+================================ */
+
+.admin-exams {
+  direction: rtl;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  color: var(--text, #1e293b);
+  box-sizing: border-box;
+}
+
+.admin-exams *,
+.admin-exams *::before,
+.admin-exams *::after {
+  box-sizing: border-box;
+}
+
+.admin-exams h1 {
+  margin: 0 0 28px;
+  font-size: clamp(25px, 3vw, 34px);
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.admin-exams h2 {
+  margin: 0 0 22px;
+  font-size: 21px;
+  font-weight: 750;
+}
+
+.admin-exams h3 {
+  margin: 0 0 14px;
+  font-size: 19px;
+  font-weight: 750;
+}
+
+/* Form card */
+
+.admin-exams form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  padding: 28px;
+  background: var(--card, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 20px;
+  box-shadow: 0 8px 28px rgb(15 23 42 / 5%);
+}
+
+.admin-exams form h2 {
+  grid-column: 1 / -1;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.admin-exams form label {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #334155);
+}
+
+.admin-exams input,
+.admin-exams select,
+.admin-exams textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 10px;
+  background: var(--input-bg, #fff);
+  color: var(--text, #1e293b);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.admin-exams textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.admin-exams input:focus,
+.admin-exams select:focus,
+.admin-exams textarea:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgb(79 70 229 / 12%);
+}
+
+.admin-exams input::placeholder,
+.admin-exams textarea::placeholder {
+  color: #94a3b8;
+}
+
+.admin-exams form > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 46px;
+  padding: 12px 26px;
+  border: 0;
+  border-radius: 11px;
+  background: #4f46e5;
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.admin-exams form > button:hover {
+  background: #4338ca;
+  transform: translateY(-1px);
+}
+
+.admin-exams button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Feedback messages */
+
+.admin-exams > p[role="alert"],
+.admin-exams > p[role="status"] {
+  margin: 0 0 18px;
+  padding: 13px 16px;
+  border-radius: 10px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.admin-exams > p[role="alert"] {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+.admin-exams > p[role="status"] {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+}
+
+/* Divider and exams list */
+
+.admin-exams hr {
+  margin: 34px 0;
+  border: 0;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+
+.admin-exams > h2 {
+  margin-bottom: 20px;
+}
+
+.admin-exams .exam-card {
+  margin-bottom: 16px;
+  padding: 22px;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 16px;
+  box-shadow: 0 5px 18px rgb(15 23 42 / 4%);
+}
+
+.admin-exams .exam-card p {
+  margin: 8px 0;
+  line-height: 1.8;
+  color: var(--muted, #64748b);
+  overflow-wrap: anywhere;
+}
+
+.admin-exams .exam-card button {
+  min-height: 40px;
+  margin-top: 12px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 9px;
+  background: #4f46e5;
+  color: white;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-exams .exam-card button:hover {
+  background: #4338ca;
+}
+
+/* Responsive */
+
+@media (max-width: 700px) {
+  .admin-exams {
+    padding: 22px 14px;
+  }
+
+  .admin-exams form {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 17px;
+    padding: 20px 16px;
+    border-radius: 15px;
+  }
+
+  .admin-exams form h2,
+  .admin-exams form > button {
+    grid-column: 1;
+  }
+
+  .admin-exams form > button {
+    width: 100%;
+  }
+
+  .admin-exams .exam-card {
+    padding: 18px 15px;
+  }
+}

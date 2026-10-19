@@ -193,3 +193,36 @@ export async function getSubjectsWithSections() {
     subjectIds.has(Number(subject.id))
   );
 }
+
+
+
+/* ---------- Online Exams ---------- */
+
+export async function getPublishedExams() {
+  if (!supabase) {
+    throw new Error("Supabase غير مهيأ. راجع ملف .env");
+  }
+
+  const { data, error } = await supabase
+    .from("exams")
+    .select(`
+      id,
+      title,
+      description,
+      subject_id,
+      audience,
+      section_id,
+      duration_minutes,
+      pass_mark,
+      sort_order
+    `)
+    .eq("is_published", true)
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    console.error("Load exams error:", error);
+    throw error;
+  }
+
+  return data ?? [];
+}
