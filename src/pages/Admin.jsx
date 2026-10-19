@@ -118,6 +118,8 @@ export default function Admin() {
 
   const load = async () => {
     try {
+      setMsg("");
+
       const [currentRows, subjectRows] = await Promise.all([
         listAll(tab),
         listAll("subjects"),
@@ -126,8 +128,11 @@ export default function Admin() {
       setRows(currentRows ?? []);
       setSubjects(subjectRows ?? []);
 
-      if (tab === "section_tasks" || tab === "sections") {
-        setSections(await listAll("sections"));
+      if (tab === "section_tasks") {
+        const sectionRows = await listAll("sections");
+        setSections(sectionRows ?? []);
+      } else if (tab === "sections") {
+        setSections(currentRows ?? []);
       }
     } catch (error) {
       setMsg("تعذّر تحميل البيانات: " + error.message);
@@ -137,7 +142,6 @@ export default function Admin() {
   useEffect(() => {
     if (isAdmin) {
       setForm({});
-      setMsg("");
       load();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,7 +200,8 @@ export default function Admin() {
     setMsg("جاري رفع الملف...");
 
     try {
-      set(key, await uploadFile(file));
+      const url = await uploadFile(file);
+      set(key, url);
       setMsg("تم رفع الملف.");
     } catch (error) {
       setMsg("فشل رفع الملف: " + error.message);
@@ -207,25 +212,63 @@ export default function Admin() {
 
   const submit = async (event) => {
     event.preventDefault();
+
+    if (busy) return;
+
     setBusy(true);
     setMsg("");
 
     try {
       const row = { ...form };
 
-      for (const [key, , type] of res.fields) {
+      // تحقق خاص بتاسكات السكاشن
+      if (tab === "section_tasks") {
+        const selectedSection = Number(row.section_id);
+
         if (
-          ["number", "subject", "section", "sectionDay"].includes(type)
+          row.section_id == null ||
+          row.section_id === "" ||
+          !Number.isFinite(selectedSection) ||
+          selectedSection <= 0
         ) {
+          setMsg("من فضلك اختار السكشن قبل حفظ التاسك.");
+          return;
+        }
+
+        const exists = sections.some(
+          (section) => Number(section.id) === selectedSection
+        );
+
+        if (!exists) {
+          setMsg("السكشن المختار غير موجود. حدّث الصفحة واختار سكشن موجود.");
+          return;
+        }
+
+        row.section_id = selectedSection;
+      }
+
+      for (const [key, , type] of res.fields) {
+        if (["number", "subject", "section", "sectionDay"].includes(type)) {
           row[key] =
             row[key] === "" || row[key] == null
               ? null
               : Number(row[key]);
-        } else if (type === "datetime" && row[key]) {
-          row[key] = new Date(row[key]).toISOString();
+        } else if (type === "datetime") {
+          row[key] = row[key]
+            ? new Date(row[key]).toISOString()
+            : null;
         } else if (row[key] === "") {
           row[key] = null;
         }
+      }
+
+      // لا نسمح بإرسال section_id فارغ
+      if (
+        tab === "section_tasks" &&
+        (!Number.isFinite(row.section_id) || row.section_id <= 0)
+      ) {
+        setMsg("رقم السكشن غير صحيح. اختار السكشن مرة أخرى.");
+        return;
       }
 
       await saveRow(tab, row);
@@ -265,6 +308,7 @@ export default function Admin() {
         {Object.entries(RES).map(([key, value]) => (
           <button
             key={key}
+            type="button"
             className={`btn ${tab === key ? "" : "g"}`}
             onClick={() => {
               setTab(key);
@@ -276,7 +320,7 @@ export default function Admin() {
           </button>
         ))}
 
-        <button className="btn g" onClick={logout}>
+        <button type="button" className="btn g" onClick={logout}>
           خروج
         </button>
       </div>
@@ -316,9 +360,14 @@ export default function Admin() {
                 <select
                   required
                   value={form[key] ?? ""}
+                  disabled={sections.length === 0}
                   onChange={(event) => set(key, event.target.value)}
                 >
-                  <option value="">اختر السكشن</option>
+                  <option value="">
+                    {sections.length
+                      ? "اختر السكشن"
+                      : "لا توجد سكاشن متاحة"}
+                  </option>
                   {sections.map((section) => (
                     <option key={section.id} value={section.id}>
                       {section.name}
@@ -413,6 +462,7 @@ export default function Admin() {
 
               <span>
                 <button
+                  type="button"
                   className="btn g"
                   disabled={busy}
                   onClick={() => edit(row)}
@@ -421,6 +471,7 @@ export default function Admin() {
                 </button>{" "}
 
                 <button
+                  type="button"
                   className="btn g"
                   style={{ color: "var(--bad)" }}
                   disabled={busy}
@@ -438,4 +489,3 @@ export default function Admin() {
     </>
   );
 }
-
